@@ -1,0 +1,15 @@
+;; shadow-cljs configuration
+{:source-paths
+ ["src/dev"
+  "src/main"
+  "src/test"]
+
+ :dependencies
+ [[reagent "1.1.1"]
+  [re-frame "1.3.0-rc3"]]
+
+ :dev-http {8081 "public"}
+ :builds
+ {:frontend
+  {:target :browser
+   :modules {:main {:init-fn looset-cardume.app/init}}}}}
