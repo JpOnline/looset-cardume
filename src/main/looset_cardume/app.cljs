@@ -1,5 +1,6 @@
 (ns looset-cardume.app
   (:require
+    [clojure.string :as str]
     [reagent.dom]
     [reagent.core :as reagent]
     ["mermaid" :as mermaid]
@@ -26,14 +27,46 @@
   (get-in app-state [:domain :sequence-1] ""))
 (re-frame/reg-sub ::sequence-1 sequence-1)
 
+(defn process-foldings [lines]
+  (first
+    (reduce
+      (fn [[r folding?] line]
+        (js/console.log r)
+        (let [[_ fold-replacement :as start-folding?](re-find #"start-fold (.*)" line)
+              end-folding? (re-find #"end-fold" line)]
+          (cond
+            (and (not folding?) start-folding?)
+            [(conj r fold-replacement) true]
+
+            (not folding?)
+            [(conj r line) false]
+
+            end-folding?
+            [r false]
+
+            :else ;; still-folding
+            [r true])))
+      [[] false] lines)))
+
+(defn sequence-1-processed
+  [sequence-1]
+  (js/console.log (first (str/split sequence-1 #"\n")))
+  (as-> sequence-1 $
+    (str/split $ #"\n")
+    (process-foldings $)
+    (str/join "\n" $)))
+(re-frame/reg-sub
+  ::sequence-1-processed
+  :<- [::sequence-1]
+  sequence-1-processed)
+
 (defn set-sequence-1
   [app-state [_event v]]
   (assoc-in app-state [:domain :sequence-1] v))
-  ;; (.contentLoaded mermaid))
 (re-frame/reg-event-db ::set-sequence-1 set-sequence-1)
 
 (def initial-state
-  {:domain {:sequence-1 "sequenceDiagram\nA->>B: B\n"}
+  {:domain {:sequence-1 "sequenceDiagram\nA->>B: C\n"}
    :ui {}})
 
 (defn initialize-mermaid []
@@ -43,14 +76,16 @@
 (defn my-elem []
   [:<>
    [:h1 "Hello!"]
+   [:textarea
+    {:style {:height 200 :width 400}
+     :onChange #(>evt [::set-sequence-1 (-> % .-target .-value)])
+     :value (<sub [::sequence-1])}]
+   [:pre (<sub [::sequence-1-processed])]
    [:div
     [(with-mount-fn
        [:div#sequence-1.mermaid
         {:component-did-mount #(.contentLoaded mermaid)}
-        (<sub [::sequence-1])])]]
-   [:textArea
-    {:onChange #(>evt [::set-sequence-1 (-> % .-target .-value)])}
-    (<sub [::sequence-1])]])
+        (<sub [::sequence-1-processed])])]]])
 
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [_event application-state]]
@@ -64,8 +99,8 @@
     ;; (day8.re-frame-10x/show-panel! false)
     (re-frame/clear-subscription-cache!))
   (when-let [el (.getElementById js/document "root")]
-    (reagent.dom/render [my-elem] el)))
-  ;; (.contentLoaded mermaid))
+    (reagent.dom/render [my-elem] el))
+  (.contentLoaded mermaid))
 
 (defn init []
   (init-state)
