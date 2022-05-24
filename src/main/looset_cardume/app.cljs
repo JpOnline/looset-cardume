@@ -22,16 +22,28 @@
                                           dissoc :component-did-mount))
      :component-did-mount component-did-mount}))
 
-(defn sequence-1
+(defn cardume-text
   [app-state]
-  (get-in app-state [:domain :sequence-1] ""))
-(re-frame/reg-sub ::sequence-1 sequence-1)
+  (get-in app-state [:domain :cardume-text] ""))
+(re-frame/reg-sub ::cardume-text cardume-text)
+
+(defn modes
+  [app-state]
+  (-> app-state
+    (get-in [:ui :modes] [])
+    (->> (map #(assoc % :checked? (= (:id %)
+                                     (get-in app-state [:ui :selected-mode] "Cardume")))))))
+(re-frame/reg-sub ::modes modes)
+
+(defn selected-mode
+  [app-state]
+  (get-in app-state [:ui :selected-mode] "Cardume"))
+(re-frame/reg-sub ::selected-mode selected-mode)
 
 (defn process-foldings [lines]
   (first
     (reduce
       (fn [[r folding?] line]
-        (js/console.log r)
         (let [[_ fold-replacement :as start-folding?](re-find #"start-fold (.*)" line)
               end-folding? (re-find #"end-fold" line)]
           (cond
@@ -48,44 +60,90 @@
             [r true])))
       [[] false] lines)))
 
-(defn sequence-1-processed
-  [sequence-1]
-  (js/console.log (first (str/split sequence-1 #"\n")))
-  (as-> sequence-1 $
+(defn mermaid-text
+  [cardume-text]
+  (as-> cardume-text $
     (str/split $ #"\n")
     (process-foldings $)
     (str/join "\n" $)))
 (re-frame/reg-sub
-  ::sequence-1-processed
-  :<- [::sequence-1]
-  sequence-1-processed)
+  ::mermaid-text
+  :<- [::cardume-text]
+  mermaid-text)
 
-(defn set-sequence-1
+(defn line-data [line]
+  (let [actor-pattern #"([^\+\->:\n,;\"participant\"%]+)((?!(\-x|\-\-x|\-\)|\-\-\)))[\-]*[^\+\->:\n,;]+)*"
+        signal-type-pattern #"->>|-->>|->|-->|\-[x]|\-\-[x]|\-[\)]|\-\-[\)]"
+        final-pattern (re-pattern (str actor-pattern signal-type-pattern))]
+    (str line (re-find final-pattern line))))
+
+(defn cardume-view
+  [cardume-text]
+  (map line-data (str/split cardume-text #"\n")))
+(re-frame/reg-sub
+  ::cardume-view
+  :<- [::cardume-text]
+  cardume-view)
+
+
+(defn set-cardume-text
   [app-state [_event v]]
-  (assoc-in app-state [:domain :sequence-1] v))
-(re-frame/reg-event-db ::set-sequence-1 set-sequence-1)
+  (assoc-in app-state [:domain :cardume-text] v))
+(re-frame/reg-event-db ::set-cardume-text set-cardume-text)
+
+(defn select-mode
+  [app-state [_event v]]
+  (assoc-in app-state [:ui :selected-mode] v))
+(re-frame/reg-event-db ::select-mode select-mode)
 
 (def initial-state
-  {:domain {:sequence-1 "sequenceDiagram\nA->>B: C\n"}
-   :ui {}})
+  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% start-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
+   :ui {:selected-mode "Cardume"
+        :modes [{:id "Cardume"}
+                {:id "Cardume Text"}
+                {:id "Mermaid Text"}]}})
 
 (defn initialize-mermaid []
   (.initialize mermaid
     #js {:theme "forest"}))
 
+(defn cardume []
+  [:<>
+    (map
+      (fn [line]
+        ^{:key line}
+        [:pre line])
+      (<sub [::cardume-view]))])
+
 (defn my-elem []
   [:<>
-   [:h1 "Hello!"]
+   [:h1 "Looset Cardume"]
+   [:div
+    "Mode:"
+    (map (fn [{:keys [id checked?]}]
+           ^{:key id}
+           [:<>
+            [:input {:checked checked?
+                     :onClick #(>evt [::select-mode id])
+                     :type "radio"
+                     :id id
+                     :name "mode"
+                     :value id}]
+            [:label {:for id} id]])
+         (<sub [::modes]))]
    [:textarea
     {:style {:height 200 :width 400}
-     :onChange #(>evt [::set-sequence-1 (-> % .-target .-value)])
-     :value (<sub [::sequence-1])}]
-   [:pre (<sub [::sequence-1-processed])]
+     :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
+     :value (<sub [::cardume-text])}]
+   (case (<sub [::selected-mode])
+     "Cardume" [cardume]
+     "Cardume Text" [:pre (<sub [::cardume-text])]
+     "Mermaid Text" [:pre (<sub [::mermaid-text])])
    [:div
     [(with-mount-fn
        [:div#sequence-1.mermaid
         {:component-did-mount #(.contentLoaded mermaid)}
-        (<sub [::sequence-1-processed])])]]])
+        (<sub [::mermaid-text])])]]])
 
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [_event application-state]]
