@@ -4,7 +4,8 @@
     [reagent.dom]
     [reagent.core :as reagent]
     ["mermaid" :as mermaid]
-    [re-frame.core :as re-frame]))
+    [re-frame.core :as re-frame]
+    ["dragselect" :as dragselect]))
 
 (when ^boolean js/goog.DEBUG ;; Code removed in production
   (js/console.log "Debugger mode!"))
@@ -27,17 +28,22 @@
   (get-in app-state [:domain :cardume-text] ""))
 (re-frame/reg-sub ::cardume-text cardume-text)
 
+(defn valid-cardume-text
+  [app-state]
+  (get-in app-state [:ui :validation :valid-cardume-text] ""))
+(re-frame/reg-sub ::valid-cardume-text valid-cardume-text)
+
 (defn modes
   [app-state]
   (-> app-state
-    (get-in [:ui :modes] [])
+    (get-in [:ui :mode :items] [])
     (->> (map #(assoc % :checked? (= (:id %)
-                                     (get-in app-state [:ui :selected-mode] "Cardume")))))))
+                                     (get-in app-state [:ui :mode :selected] "Cardume")))))))
 (re-frame/reg-sub ::modes modes)
 
 (defn selected-mode
   [app-state]
-  (get-in app-state [:ui :selected-mode] "Cardume"))
+  (get-in app-state [:ui :mode :selected] "Cardume"))
 (re-frame/reg-sub ::selected-mode selected-mode)
 
 (defn process-foldings [lines]
@@ -68,7 +74,7 @@
     (str/join "\n" $)))
 (re-frame/reg-sub
   ::mermaid-text
-  :<- [::cardume-text]
+  :<- [::valid-cardume-text]
   mermaid-text)
 
 (defn line-data [line]
@@ -79,41 +85,95 @@
 
 (defn cardume-view
   [cardume-text]
+  (let [mermaid-meta (try (.-yy (.-parser (.parse mermaid cardume-text)))
+                          (catch :default _
+                            ""))]
+    (js/console.log "mermaid" mermaid-meta))
   (map line-data (str/split cardume-text #"\n")))
 (re-frame/reg-sub
   ::cardume-view
   :<- [::cardume-text]
   cardume-view)
 
+(defn valid-diagram?
+  [app-state]
+  (get-in app-state [:ui :validation :valid-diagram?] false))
+(re-frame/reg-sub ::valid-diagram? valid-diagram?)
+
+(defn trim-lines [txt]
+  (->> (str/split txt #"\n")
+    (map str/trim)
+    (str/join "\n")))
 
 (defn set-cardume-text
   [app-state [_event v]]
-  (assoc-in app-state [:domain :cardume-text] v))
+  (try (.parse mermaid (trim-lines v))
+       (-> app-state
+         (assoc-in [:domain :cardume-text] v)
+         (assoc-in [:ui :validation :valid-cardume-text] v)
+         (assoc-in [:ui :validation :valid-diagram?] true))
+       (catch :default e
+         (-> app-state
+           (assoc-in [:domain :cardume-text] v)
+           (assoc-in [:ui :validation :valid-diagram?] false)))))
 (re-frame/reg-event-db ::set-cardume-text set-cardume-text)
 
 (defn select-mode
   [app-state [_event v]]
-  (assoc-in app-state [:ui :selected-mode] v))
+  (assoc-in app-state [:ui :mode :selected] v))
 (re-frame/reg-event-db ::select-mode select-mode)
 
 (def initial-state
   {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% start-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
-   :ui {:selected-mode "Cardume"
-        :modes [{:id "Cardume"}
-                {:id "Cardume Text"}
-                {:id "Mermaid Text"}]}})
+   :ui {:cardume {:selected []}
+        :mode {:selected "Cardume"
+               :items [{:id "Cardume"}
+                       {:id "Cardume Text"}
+                       {:id "Mermaid Text"}]}}})
 
 (defn initialize-mermaid []
   (.initialize mermaid
     #js {:theme "forest"}))
 
+(defn initialize-dragselect []
+  (let [ds (dragselect.
+             #js {:selectables (js/document.getElementsByClassName "selectable")
+                  :draggability false
+                  :area (js/document.getElementById "cardume")})]
+    (.subscribe ds "callback" (fn [e] (js/console.log (clj->js (map (fn [i] (.-id i)) (.-items e))))))))
+
+
 (defn cardume []
   [:<>
-    (map
-      (fn [line]
-        ^{:key line}
-        [:pre line])
-      (<sub [::cardume-view]))])
+   [:style
+    "
+    .ds-selected {
+      background-color: lightgray;
+    }
+    "]
+   [(with-mount-fn
+      [:div#cardume
+       {:style {:user-select "none"
+                :width "400px"}
+        :component-did-mount initialize-dragselect}
+       (map-indexed
+         (fn [idx line]
+           ^{:key line}
+           [:pre.selectable
+            {:id idx
+             :style {:margin "0"
+                     :padding "0 10px"}}
+            line])
+         (<sub [::cardume-view]))])]])
+
+(defn diagram-comp []
+  (let [mermaid-text (<sub [::mermaid-text])
+        valid-diagram? (<sub [::valid-diagram?])]
+    [(with-mount-fn
+       [:div#sequence-1.mermaid
+        {:component-did-mount #(.contentLoaded mermaid)
+         :style {:opacity (if valid-diagram? "100%" "40%")}}
+        mermaid-text])]))
 
 (defn my-elem []
   [:<>
@@ -124,7 +184,7 @@
            ^{:key id}
            [:<>
             [:input {:checked checked?
-                     :onClick #(>evt [::select-mode id])
+                     :onChange #(>evt [::select-mode id])
                      :type "radio"
                      :id id
                      :name "mode"
@@ -139,15 +199,13 @@
      "Cardume" [cardume]
      "Cardume Text" [:pre (<sub [::cardume-text])]
      "Mermaid Text" [:pre (<sub [::mermaid-text])])
-   [:div
-    [(with-mount-fn
-       [:div#sequence-1.mermaid
-        {:component-did-mount #(.contentLoaded mermaid)}
-        (<sub [::mermaid-text])])]]])
+   [diagram-comp]])
 
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [_event application-state]]
-    application-state))
+    (-> application-state
+      (assoc-in [:ui :validation :valid-diagram?] true)
+      (assoc-in [:ui :validation :valid-cardume-text] (get-in application-state [:domain :cardume-text])))))
 
 (defn init-state []
   (re-frame/dispatch-sync [::set-app-state initial-state]))
