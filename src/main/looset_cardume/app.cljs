@@ -28,6 +28,8 @@
   (get-in app-state [:domain :cardume-text] ""))
 (re-frame/reg-sub ::cardume-text cardume-text)
 
+;; ---- SUBS ----
+
 (defn valid-cardume-text
   [app-state]
   (get-in app-state [:ui :validation :valid-cardume-text] ""))
@@ -119,6 +121,8 @@
   (get-in app-state [:ui :validation :valid-diagram?] false))
 (re-frame/reg-sub ::valid-diagram? valid-diagram?)
 
+;; ---- EVENTS ----
+
 (defn trim-lines [txt]
   (->> (str/split txt #"\n")
     (map str/trim)
@@ -142,25 +146,9 @@
   (assoc-in app-state [:ui :mode :selected] v))
 (re-frame/reg-event-db ::select-mode select-mode)
 
-(def initial-state
-  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
-   :ui {:cardume {:selected []}
-        :mode {:selected "Cardume"
-               :items [{:id "Cardume"}
-                       {:id "Cardume Text"}
-                       {:id "Mermaid Text"}]}}})
+;; ---- Views ----
 
-(defn initialize-mermaid []
-  (.initialize mermaid
-    #js {:theme "forest"}))
-
-(defn initialize-dragselect []
-  (let [ds (dragselect.
-             #js {:selectables (js/document.getElementsByClassName "selectable")
-                  :draggability false
-                  :area (js/document.getElementById "cardume")})]
-    (.subscribe ds "callback" (fn [e] (js/console.log (clj->js (map (fn [i] (.-id i)) (.-items e))))))))
-
+(declare initialize-dragselect)
 
 (defn cardume []
   [:<>
@@ -207,7 +195,7 @@
          :style {:opacity (if valid-diagram? "100%" "40%")}}
         mermaid-text])]))
 
-(defn my-elem []
+(defn main []
   [:<>
    [:h1 "Looset Cardume"]
    [:div
@@ -234,6 +222,29 @@
      "Mermaid Text" [:pre (<sub [::mermaid-text])])
    [diagram-comp]])
 
+;; ---- Initialization ----
+
+(defn initialize-dragselect []
+  (let [ds (dragselect.
+             #js {:selectables (js/document.getElementsByClassName "selectable")
+                  :draggability false
+                  :area (js/document.getElementById "cardume")})]
+    (.subscribe ds "elementselect" (fn [e] (js/console.log "selected" (clj->js (.-id (.-item e))))))
+    (.subscribe ds "elementunselect" (fn [e] (js/console.log "unselected" (clj->js (.-id (.-item e))))))
+    (.subscribe ds "callback" (fn [e] (js/console.log "mouse up" (clj->js (map (fn [i] (.-id i)) (.-items e))))))))
+
+(def initial-state
+  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
+   :ui {:cardume {:selected-lines {}}
+        :mode {:selected "Cardume"
+               :items [{:id "Cardume"}
+                       {:id "Cardume Text"}
+                       {:id "Mermaid Text"}]}}})
+
+(defn initialize-mermaid []
+  (.initialize mermaid
+    #js {:theme "forest"}))
+
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [_event application-state]]
     (-> application-state
@@ -248,7 +259,7 @@
     ;; (day8.re-frame-10x/show-panel! false)
     (re-frame/clear-subscription-cache!))
   (when-let [el (.getElementById js/document "root")]
-    (reagent.dom/render [my-elem] el))
+    (reagent.dom/render [main] el))
   (.contentLoaded mermaid))
 
 (defn init []
