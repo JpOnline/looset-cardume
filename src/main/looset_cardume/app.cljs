@@ -77,19 +77,37 @@
   :<- [::valid-cardume-text]
   mermaid-text)
 
-(defn line-data [line]
-  (let [actor-pattern #"([^\+\->:\n,;\"participant\"%]+)((?!(\-x|\-\-x|\-\)|\-\-\)))[\-]*[^\+\->:\n,;]+)*"
-        signal-type-pattern #"->>|-->>|->|-->|\-[x]|\-\-[x]|\-[\)]|\-\-[\)]"
-        final-pattern (re-pattern (str actor-pattern signal-type-pattern))]
-    (str line (re-find final-pattern line))))
+(defn process-foldings2 [data-lines]
+  (first
+    (reduce
+      (fn [[r folding-level] {:keys [text] :as data-line}]
+        (let [[_ fold-replacement :as start-folding?](re-find #"start-fold (.*)" text)
+              end-folding? (re-find #"end-fold" text)]
+          (cond
+            start-folding?
+            [(conj r (-> data-line
+                       (assoc :fold-level (inc folding-level))
+                       (assoc :replacement-text fold-replacement)))
+             (inc folding-level)]
+
+            end-folding?
+            [(conj r (assoc data-line :fold-level folding-level)) (dec folding-level)]
+
+            :else
+            [(conj r (assoc data-line :fold-level folding-level)) folding-level])))
+      [[] 0] data-lines)))
 
 (defn cardume-view
   [cardume-text]
-  (let [mermaid-meta (try (.-yy (.-parser (.parse mermaid cardume-text)))
-                          (catch :default _
-                            ""))]
-    (js/console.log "mermaid" mermaid-meta))
-  (map line-data (str/split cardume-text #"\n")))
+  ;; (let [mermaid-meta (try (.-yy (.-parser (.parse mermaid cardume-text)))
+  ;;                         (catch :default _
+  ;;                           ""))
+  ;;       actors (.getActors mermaid-meta)
+  ;;       calls (.getMessages mermaid-meta)]
+  ;;   (js/console.log "mermaid" mermaid-meta)
+  (->> (str/split cardume-text #"\n")
+    (map #(into {:text %}))
+    (process-foldings2)))
 (re-frame/reg-sub
   ::cardume-view
   :<- [::cardume-text]
@@ -112,7 +130,7 @@
          (assoc-in [:domain :cardume-text] v)
          (assoc-in [:ui :validation :valid-cardume-text] v)
          (assoc-in [:ui :validation :valid-diagram?] true))
-       (catch :default e
+       (catch :default _
          (-> app-state
            (assoc-in [:domain :cardume-text] v)
            (assoc-in [:ui :validation :valid-diagram?] false)))))
@@ -157,14 +175,27 @@
                 :width "400px"}
         :component-did-mount initialize-dragselect}
        (map-indexed
-         (fn [idx line]
-           ^{:key line}
+         (fn [idx {:keys [text fold-level replacement-text]}]
+           ^{:key text}
            [:pre.selectable
             {:id idx
              :style {:margin "0"
-                     :padding "0 10px"}}
-            line])
+                     :padding "0 10px"
+                     :padding-left (str (+ 10 (* 15 fold-level))"px")}}
+            (str (when replacement-text "> ") text)])
          (<sub [::cardume-view]))])]])
+
+(defn data-lines []
+  [:div
+   (map-indexed
+     (fn [idx line]
+       ^{:key line}
+       [:pre.selectable
+        {:id idx
+         :style {:margin "0"
+                 :padding "2px 0px"}}
+        line])
+     (<sub [::cardume-view]))])
 
 (defn diagram-comp []
   (let [mermaid-text (<sub [::mermaid-text])
@@ -195,6 +226,7 @@
     {:style {:height 200 :width 400}
      :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
      :value (<sub [::cardume-text])}]
+   [data-lines]
    (case (<sub [::selected-mode])
      "Cardume" [cardume]
      "Cardume Text" [:pre (<sub [::cardume-text])]
