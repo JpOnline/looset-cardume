@@ -50,7 +50,7 @@
   (first
     (reduce
       (fn [[r folding?] line]
-        (let [[_ fold-replacement :as start-folding?](re-find #"start-fold (.*)" line)
+        (let [[_ _fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" line)
               end-folding? (re-find #"end-fold" line)]
           (cond
             (and (not folding?) start-folding?)
@@ -81,13 +81,14 @@
   (first
     (reduce
       (fn [[r folding-level] {:keys [text] :as data-line}]
-        (let [[_ fold-replacement :as start-folding?](re-find #"start-fold (.*)" text)
+        (let [[_ fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" text)
               end-folding? (re-find #"end-fold" text)]
           (cond
             start-folding?
             [(conj r (-> data-line
                        (assoc :fold-level (inc folding-level))
-                       (assoc :replacement-text fold-replacement)))
+                       (assoc :replacement-text fold-replacement)
+                       (assoc :fold-status fold-status)))
              (inc folding-level)]
 
             end-folding?
@@ -142,7 +143,7 @@
 (re-frame/reg-event-db ::select-mode select-mode)
 
 (def initial-state
-  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% start-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
+  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
    :ui {:cardume {:selected []}
         :mode {:selected "Cardume"
                :items [{:id "Cardume"}
