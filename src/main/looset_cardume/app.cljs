@@ -82,23 +82,32 @@
 (defn process-foldings2 [data-lines]
   (first
     (reduce
-      (fn [[r folding-level] {:keys [text] :as data-line}]
-        (let [[_ fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" text)
+      (fn [[res folding-level [fold-status & folding-stack]] {:keys [text] :as data-line}]
+        (let [[_ new-fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" text)
               end-folding? (re-find #"end-fold" text)]
           (cond
             start-folding?
-            [(conj r (-> data-line
-                       (assoc :fold-level (inc folding-level))
-                       (assoc :replacement-text fold-replacement)
-                       (assoc :fold-status fold-status)))
-             (inc folding-level)]
+            [(conj res (-> data-line
+                         (assoc :fold-level folding-level)
+                         (assoc :replacement-text fold-replacement)
+                         (assoc :fold-status new-fold-status)))
+             (inc folding-level)
+             (conj folding-stack fold-status new-fold-status)]
 
             end-folding?
-            [(conj r (assoc data-line :fold-level folding-level)) (dec folding-level)]
+            [(conj res (-> data-line
+                         (assoc :fold-status fold-status)
+                         (assoc :fold-level folding-level)))
+             (dec folding-level)
+             folding-stack]
 
             :else
-            [(conj r (assoc data-line :fold-level folding-level)) folding-level])))
-      [[] 0] data-lines)))
+            [(conj res (-> data-line
+                         (assoc :fold-status fold-status)
+                         (assoc :fold-level folding-level)))
+             folding-level
+             (conj folding-stack fold-status)])))
+      [[] 0 '()] data-lines)))
 
 (defn cardume-view
   [cardume-text]
@@ -120,6 +129,11 @@
   [app-state]
   (get-in app-state [:ui :validation :valid-diagram?] false))
 (re-frame/reg-sub ::valid-diagram? valid-diagram?)
+
+(defn selected-lines
+  [app-state]
+  (get-in app-state [:ui :cardume :selected-lines] {}))
+(re-frame/reg-sub ::selected-lines selected-lines)
 
 ;; ---- EVENTS ----
 
@@ -146,6 +160,22 @@
   (assoc-in app-state [:ui :mode :selected] v))
 (re-frame/reg-event-db ::select-mode select-mode)
 
+(defn set-selected-line
+  [app-state [_event line selected?]]
+  (js/console.log "set-sel" line selected?)
+  (assoc-in app-state [:ui :cardume :selected-lines line] selected?))
+(re-frame/reg-event-db ::set-selected-line set-selected-line)
+
+(defn toggle-cardume
+  [app-state [_event line-number new-state]]
+  (let [_ (js/console.log "jp 0" line-number new-state)
+        state-cardume-text (cardume-text app-state)
+        _ (js/console.log "jp 1" state-cardume-text)
+        lines (str/split state-cardume-text #"\n")
+        updated-lines (update lines line-number str/replace #"open|closed" new-state)]
+    (assoc-in app-state [:domain :cardume-text] (str/join "\n" updated-lines))))
+(re-frame/reg-event-db ::toggle-cardume toggle-cardume)
+
 ;; ---- Views ----
 
 (declare initialize-dragselect)
@@ -164,14 +194,26 @@
                 :width "400px"}
         :component-did-mount initialize-dragselect}
        (map-indexed
-         (fn [idx {:keys [text fold-level replacement-text]}]
+         (fn [idx {:keys [text fold-level replacement-text fold-status]}]
            ^{:key text}
            [:pre.selectable
             {:id idx
+             :onDoubleClick (when replacement-text #(js/alert idx))
              :style {:margin "0"
                      :padding "0 10px"
                      :padding-left (str (+ 10 (* 15 fold-level))"px")}}
-            (str (when replacement-text "> ") text)])
+            (cond
+              (and replacement-text (= "open" fold-status))
+              [:<> [:b {:onClick #(>evt [::toggle-cardume idx "closed"])} "v "] replacement-text]
+
+              (and replacement-text (= "closed" fold-status))
+              [:<> [:b {:onClick #(>evt [::toggle-cardume idx "open"])}  "> "] replacement-text]
+
+              (= "closed" fold-status)
+              ""
+
+              :else
+              text)])
          (<sub [::cardume-view]))])]])
 
 (defn data-lines []
@@ -229,7 +271,9 @@
              #js {:selectables (js/document.getElementsByClassName "selectable")
                   :draggability false
                   :area (js/document.getElementById "cardume")})]
-    (.subscribe ds "elementselect" (fn [e] (js/console.log "selected" (clj->js (.-id (.-item e))))))
+    (.subscribe ds "elementselect" (fn [e]
+                                     (>evt [::set-selected-line (.-id (.-item e)) true])
+                                     (js/console.log "selected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "elementunselect" (fn [e] (js/console.log "unselected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "callback" (fn [e] (js/console.log "mouse up" (clj->js (map (fn [i] (.-id i)) (.-items e))))))))
 
