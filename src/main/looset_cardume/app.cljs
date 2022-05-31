@@ -23,6 +23,8 @@
                                           dissoc :component-did-mount))
      :component-did-mount component-did-mount}))
 
+(def drag-select (atom nil))
+
 ;; ---- SUBS ----
 
 (defn cardume-text
@@ -201,16 +203,23 @@
                            (remove-folds-without-header)
                            (map :text)
                            (str/join "\n"))]
+    (.clearSelection @drag-select)
     (-> app-state
       (assoc-in [:domain :cardume-text] new-cardume-text)
       (assoc-in [:ui :cardume :editing-line] nil))))
+(re-frame/reg-event-db ::finish-line-edition finish-line-edition)
 
 (defn insert-at [coll idx el]
   (let [[before after] (split-at idx coll)]
     (concat before [el] after)))
 
+(re-frame/reg-fx
+  :focus-to-element
+  (fn [element-id]
+    (reagent/after-render #(some-> (js/document.getElementById element-id) .focus))))
+
 (defn lines-select-mouse-up
-  [app-state [_event selected-lines]]
+  [{app-state :db} [_event selected-lines]]
   (let [updated-app-state (assoc-in app-state [:ui :cardume :selected-lines] selected-lines)
         num-selected (count selected-lines)
         sorted-selected (sort selected-lines)
@@ -224,17 +233,18 @@
         new-cardume-text (str/join "\n" new-lines)
         editing (get-in app-state [:ui :cardume :editing-line])]
     (cond
-      (and editing (not= first-selected editing))
-      (finish-line-edition updated-app-state)
+      ;; (and editing (not= first-selected editing))
+      ;; {:db (finish-line-edition updated-app-state)}
 
       (or (< num-selected 2) editing)
-      updated-app-state
+      {:db updated-app-state}
 
       :else
-      (-> updated-app-state
-        (assoc-in [:ui :cardume :editing-line] first-selected)
-        (assoc-in [:domain :cardume-text] new-cardume-text)))))
-(re-frame/reg-event-db ::lines-select-mouse-up lines-select-mouse-up)
+      {:focus-to-element "input-line"
+       :db (-> updated-app-state
+             (assoc-in [:ui :cardume :editing-line] first-selected)
+             (assoc-in [:domain :cardume-text] new-cardume-text))})))
+(re-frame/reg-event-fx ::lines-select-mouse-up lines-select-mouse-up)
 
 (defn set-cardume-line-text
   [app-state [_event line-num original-text new-text]]
@@ -288,8 +298,8 @@
         (for [idx (range (count (<sub [::cardume-view])))]
           (let [{:keys [text fold-level replacement-text fold-status] :as line-data} (<sub [::cardume-line idx])]
             (if (= editing-line idx)
-              [:input.selectable
-               {:id idx
+              [:input#input-line.selectable
+               {:onBlur #(>evt [::finish-line-edition])
                 :value replacement-text
                 :onChange #(>evt [::set-cardume-line-text idx text (-> % .-target .-value)])}]
               [cardume-line-pre-el idx line-data]))))]]))
@@ -356,11 +366,12 @@
                                        (js/console.log "unselected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "callback" (fn [e]
                                 (re-frame/dispatch-sync [::lines-select-mouse-up (mapv (fn [i] (.-id i)) (.-items e))])
-                                (when (<sub [::editing-line])
-                                  (.clearSelection ds))
+                                ;; (when (<sub [::editing-line])
+                                ;;   (.clearSelection ds))
                                 (.addSelectables ds (js/document.getElementsByClassName "selectable"))
                                 (js/console.log "mouse up!"
-                                                (clj->js (map (fn [i] (.-id i)) (.-items e))))))))
+                                                (clj->js (map (fn [i] (.-id i)) (.-items e))))))
+    ds))
 
 (def initial-state
   {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
@@ -391,7 +402,7 @@
   (when-let [el (.getElementById js/document "root")]
     (reagent.dom/render [main] el))
   (.contentLoaded mermaid)
-  (initialize-dragselect))
+  (reset! drag-select (initialize-dragselect)))
 
 (defn init []
   (init-state)
