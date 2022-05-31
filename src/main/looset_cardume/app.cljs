@@ -23,7 +23,7 @@
                                           dissoc :component-did-mount))
      :component-did-mount component-did-mount}))
 
-(def drag-select (atom nil))
+(defonce drag-select (atom nil))
 
 ;; ---- SUBS ----
 
@@ -50,21 +50,24 @@
   (get-in app-state [:ui :mode :selected] "Cardume"))
 (re-frame/reg-sub ::selected-mode selected-mode)
 
-(defn process-foldings [lines]
+(defn process-mermaid [lines]
   (first
     (reduce
       (fn [[r folding?] line]
-        (let [[_ _fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" line)
+        (let [[_ fold-status fold-replacement] (re-find #"(\w+)-fold (.*)" line)
               end-folding? (re-find #"end-fold" line)]
           (cond
-            (and (not folding?) start-folding?)
+            (and (not folding?) (= fold-status "closed"))
             [(conj r fold-replacement) true]
 
-            (not folding?)
-            [(conj r line) false]
+            (and (not folding?) (= fold-status "open"))
+            [r false]
 
             end-folding?
             [r false]
+
+            (not folding?)
+            [(conj r line) false]
 
             :else ;; still-folding
             [r true])))
@@ -74,14 +77,14 @@
   [cardume-text]
   (as-> cardume-text $
     (str/split $ #"\n")
-    (process-foldings $)
+    (process-mermaid $)
     (str/join "\n" $)))
 (re-frame/reg-sub
   ::mermaid-text
   :<- [::valid-cardume-text]
   mermaid-text)
 
-(defn process-foldings2 [data-lines]
+(defn process-cardume [data-lines]
   (first
     (reduce
       (fn [[res folding-level [fold-status & folding-stack]] {:keys [text] :as data-line}]
@@ -121,7 +124,7 @@
   ;;   (js/console.log "mermaid" mermaid-meta)
   (->> (str/split cardume-text #"\n")
     (map #(into {:text %}))
-    (process-foldings2)))
+    (process-cardume)))
 (re-frame/reg-sub
   ::cardume-view
   :<- [::cardume-text]
@@ -171,11 +174,11 @@
 (re-frame/reg-event-db ::select-mode select-mode)
 
 (defn toggle-cardume
-  [app-state [_event line-number new-state]]
+  [app-state [event line-number new-state]]
   (let [state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
         updated-lines (update lines line-number str/replace #"open|closed" new-state)]
-    (assoc-in app-state [:domain :cardume-text] (str/join "\n" updated-lines))))
+    (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::toggle-cardume toggle-cardume)
 
 (defn remove-folds-without-header
@@ -195,17 +198,17 @@
       [[] false] data-lines)))
 
 (defn finish-line-edition
-  [app-state]
+  [app-state [event]]
   (let [state-cardume-text (cardume-text app-state)
         new-cardume-text (->> (str/split state-cardume-text #"\n")
                            (map #(into {:text %}))
-                           (process-foldings2)
+                           (process-cardume)
                            (remove-folds-without-header)
                            (map :text)
                            (str/join "\n"))]
-    (.clearSelection @drag-select)
+    (.clearSelection ^js/dragselect @drag-select)
     (-> app-state
-      (assoc-in [:domain :cardume-text] new-cardume-text)
+      (set-cardume-text [event new-cardume-text])
       (assoc-in [:ui :cardume :editing-line] nil))))
 (re-frame/reg-event-db ::finish-line-edition finish-line-edition)
 
@@ -219,7 +222,7 @@
     (reagent/after-render #(some-> (js/document.getElementById element-id) .focus))))
 
 (defn lines-select-mouse-up
-  [{app-state :db} [_event selected-lines]]
+  [{app-state :db} [event selected-lines]]
   (let [updated-app-state (assoc-in app-state [:ui :cardume :selected-lines] selected-lines)
         num-selected (count selected-lines)
         sorted-selected (sort selected-lines)
@@ -232,28 +235,28 @@
                     (insert-at (+ 2 last-selected) "% end-fold"))
         new-cardume-text (str/join "\n" new-lines)
         editing (get-in app-state [:ui :cardume :editing-line])]
-    (cond
-      ;; (and editing (not= first-selected editing))
-      ;; {:db (finish-line-edition updated-app-state)}
-
-      (or (< num-selected 2) editing)
+    (if (or (< num-selected 2) editing)
       {:db updated-app-state}
-
-      :else
       {:focus-to-element "input-line"
        :db (-> updated-app-state
              (assoc-in [:ui :cardume :editing-line] first-selected)
-             (assoc-in [:domain :cardume-text] new-cardume-text))})))
+             (set-cardume-text [event new-cardume-text]))})))
 (re-frame/reg-event-fx ::lines-select-mouse-up lines-select-mouse-up)
 
 (defn set-cardume-line-text
-  [app-state [_event line-num original-text new-text]]
+  [app-state [event line-num original-text new-text]]
   (let [[_ folding-header] (re-find #"(.*\w+-fold )" original-text)
         state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
         updated-lines (assoc lines line-num (str folding-header new-text))]
-    (assoc-in app-state [:domain :cardume-text] (str/join "\n" updated-lines))))
+    (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::set-cardume-line-text set-cardume-line-text)
+
+(defn set-editing-line
+  [{app-state :db} [_event line-num]]
+  {:focus-to-element "input-line"
+   :db (assoc-in app-state [:ui :cardume :editing-line] line-num)})
+(re-frame/reg-event-fx ::set-editing-line set-editing-line)
 
 ;; ---- Views ----
 
@@ -262,7 +265,7 @@
 (defn cardume-line-pre-el [idx {:keys [text fold-level replacement-text fold-status]}]
   [:pre.selectable
    {:id idx
-    :onDoubleClick (when replacement-text #(js/alert idx))
+    :onDoubleClick #(>evt [::set-editing-line idx])
     :style {:margin "0"
             :padding "0 10px"
             :padding-left (str (+ 10 (* 15 fold-level))"px")}}
@@ -296,11 +299,12 @@
                :width "400px"}}
       (into [:<>]
         (for [idx (range (count (<sub [::cardume-view])))]
-          (let [{:keys [text fold-level replacement-text fold-status] :as line-data} (<sub [::cardume-line idx])]
+          (let [{:keys [text replacement-text] :as line-data} (<sub [::cardume-line idx])]
             (if (= editing-line idx)
               [:input#input-line.selectable
-               {:onBlur #(>evt [::finish-line-edition])
-                :value replacement-text
+               {:onKeyPress #(when (= (.-key %) "Enter") (>evt [::finish-line-edition]))
+                :onBlur #(>evt [::finish-line-edition])
+                :value (or replacement-text text)
                 :onChange #(>evt [::set-cardume-line-text idx text (-> % .-target .-value)])}]
               [cardume-line-pre-el idx line-data]))))]]))
 
