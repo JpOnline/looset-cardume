@@ -283,13 +283,13 @@
    :db (assoc-in app-state [:ui :cardume :editing-line] (js/parseInt line-num))})
 (re-frame/reg-event-fx ::set-editing-line set-editing-line)
 
-(defn collapse-all
-  [app-state [event]]
+(defn toggle-all
+  [app-state [event new-state]]
   (let [state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (map #(str/replace % #"open|closed" "closed") lines)]
+        updated-lines (map #(str/replace % #"open|closed" new-state) lines)]
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
-(re-frame/reg-event-db ::collapse-all collapse-all)
+(re-frame/reg-event-db ::toggle-all toggle-all)
 
 
 ;; ---- Views ----
@@ -382,8 +382,11 @@
      "Cardume Text" [:pre (<sub [::cardume-text])]
      "Mermaid Text" [:pre (<sub [::mermaid-text])])
    [:input {:type "button"
-            :onClick #(>evt [::collapse-all])
+            :onClick #(>evt [::toggle-all "closed"])
             :value "Collapse All"}]
+   [:input {:type "button"
+            :onClick #(>evt [::toggle-all "open"])
+            :value "Expand All"}]
    [diagram-comp]])
 
 ;; ---- Initialization ----
