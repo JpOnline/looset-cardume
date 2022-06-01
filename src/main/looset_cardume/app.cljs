@@ -263,27 +263,31 @@
 (declare initialize-dragselect)
 
 (defn cardume-line-pre-el [idx {:keys [text fold-level replacement-text fold-status]}]
-  [:pre.selectable
-   {:id idx
-    :onDoubleClick #(>evt [::set-editing-line idx])
-    :style {:margin "0"
-            :padding "0 10px"
-            :padding-left (str (+ 10 (* 15 fold-level))"px")}}
-   (cond
-     (and replacement-text (= "open" fold-status))
-     [:<> [:b {:onClick #(>evt [::toggle-cardume idx "closed"])} "v "] replacement-text]
+  [(with-mount-fn
+     [:pre.selectable
+      {:id idx
+       :component-did-mount #(do
+                               (some-> ^js/dragselect @drag-select .stop)
+                               (reset! drag-select (initialize-dragselect)))
+       :onDoubleClick #(>evt [::set-editing-line idx])
+       :style {:margin "0"
+               :padding "0 10px"
+               :padding-left (str (+ 10 (* 15 fold-level))"px")}}
+      (cond
+        (and replacement-text (= "open" fold-status))
+        [:<> [:b {:onClick #(>evt [::toggle-cardume idx "closed"])} "v "] replacement-text]
 
-     (and replacement-text (= "closed" fold-status))
-     [:<> [:b {:onClick #(>evt [::toggle-cardume idx "open"])}  "> "] replacement-text]
+        (and replacement-text (= "closed" fold-status))
+        [:<> [:b {:onClick #(>evt [::toggle-cardume idx "open"])}  "> "] replacement-text]
 
-     (= "closed" fold-status)
-     ""
+        (= "closed" fold-status)
+        ""
 
-     (re-find #"end-fold" text)
-     ""
+        (re-find #"end-fold" text)
+        ""
 
-     :else
-     text)])
+        :else
+        text)])])
 
 (defn cardume []
   (let [editing-line (js/parseInt (<sub [::editing-line]))]
@@ -364,7 +368,7 @@
                   :draggability false
                   :area (js/document.getElementById "cardume")})]
     (.subscribe ds "elementselect" (fn [e]
-                                     (.addSelectables ds (js/document.getElementsByClassName "selectable"))
+                                     ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
                                      (js/console.log "selected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "elementunselect" (fn [e]
                                        (js/console.log "unselected" (clj->js (.-id (.-item e))))))
@@ -372,7 +376,7 @@
                                 (re-frame/dispatch-sync [::lines-select-mouse-up (mapv (fn [i] (.-id i)) (.-items e))])
                                 ;; (when (<sub [::editing-line])
                                 ;;   (.clearSelection ds))
-                                (.addSelectables ds (js/document.getElementsByClassName "selectable"))
+                                ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
                                 (js/console.log "mouse up!"
                                                 (clj->js (map (fn [i] (.-id i)) (.-items e))))))
     ds))
