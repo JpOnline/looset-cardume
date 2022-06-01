@@ -14,6 +14,9 @@
 (def <sub (comp deref re-frame.core/subscribe))
 (def >evt re-frame.core/dispatch)
 
+(defn fold-header [s]
+  (re-find #"(\w+)-fold (.*)" (or s "")))
+
 (defn with-mount-fn
   "Wrap component in the create-class fn so the react component-did-mount
   hook can be used."
@@ -54,7 +57,7 @@
   (first
     (reduce
       (fn [[r folding?] line]
-        (let [[_ fold-status fold-replacement] (re-find #"(\w+)-fold (.*)" line)
+        (let [[_ fold-status fold-replacement] (fold-header line)
               end-folding? (re-find #"end-fold" line)]
           (cond
             (and (not folding?) (= fold-status "closed"))
@@ -87,31 +90,35 @@
 (defn process-cardume [data-lines]
   (first
     (reduce
-      (fn [[res folding-level [fold-status & folding-stack]] {:keys [text] :as data-line}]
-        (let [[_ new-fold-status fold-replacement :as start-folding?](re-find #"(\w+)-fold (.*)" text)
-              end-folding? (re-find #"end-fold" text)]
-          (cond
-            start-folding?
-            [(conj res (-> data-line
-                         (assoc :fold-level folding-level)
-                         (assoc :replacement-text fold-replacement)
-                         (assoc :fold-status new-fold-status)))
-             (inc folding-level)
-             (conj folding-stack fold-status new-fold-status)]
-
-            end-folding?
-            [(conj res (-> data-line
-                         (assoc :fold-status fold-status)
-                         (assoc :fold-level folding-level)))
-             (dec folding-level)
-             folding-stack]
-
-            :else
-            [(conj res (-> data-line
-                         (assoc :fold-status fold-status)
-                         (assoc :fold-level folding-level)))
-             folding-level
-             (conj folding-stack fold-status)])))
+      (fn [[res idx [{:keys [fold-status starter-line] :as stack-item} & folding-stack]] {:keys [original-text] :as data-line}]
+        (let [[_ extracted-fold-status replacement-text :as folding-head?] (fold-header original-text)
+              end-folding? (re-find #"end-fold" original-text)
+              new-fold-status (if (= "closed" fold-status) "closed" extracted-fold-status)
+              new-folding-stack (cond
+                                  folding-head? (conj folding-stack stack-item {:fold-status new-fold-status :starter-line idx})
+                                  end-folding? folding-stack
+                                  :else (conj folding-stack stack-item))
+              [arrow-position toggle-event] (if (= "closed" extracted-fold-status)
+                                              ["> " "open"]
+                                              ["v " "closed"])
+              show-fold-head? (and folding-head? (not= fold-status "closed"))
+              text (cond
+                     (= "closed" fold-status) ""
+                     folding-head? replacement-text
+                     end-folding? ""
+                     :else original-text)]
+          [(conj res (-> data-line
+                       (assoc :id idx)
+                       (assoc :text text)
+                       (assoc :arrow-position (when show-fold-head? arrow-position))
+                       (assoc :toggle-event (when show-fold-head? toggle-event))
+                       (assoc :fold-level (count folding-stack))
+                       (assoc :fold-starter-line starter-line)))
+                       ;; (assoc :fold-status fold-status)
+                       ;; (assoc :stack-count (count folding-stack))
+                       ;; (assoc :end-folding? end-folding?)))
+           (inc idx)
+           new-folding-stack]))
       [[] 0 '()] data-lines)))
 
 (defn cardume-view
@@ -123,7 +130,7 @@
   ;;       calls (.getMessages mermaid-meta)]
   ;;   (js/console.log "mermaid" mermaid-meta)
   (->> (str/split cardume-text #"\n")
-    (map #(into {:text %}))
+    (map #(into {:original-text %}))
     (process-cardume)))
 (re-frame/reg-sub
   ::cardume-view
@@ -186,26 +193,27 @@
   [data-lines]
   (first
     (reduce
-      (fn [[res removing?] {:keys [text replacement-text] :as data-line}]
+      (fn [[res removing-level] {:keys [text original-text fold-level] folding-head? :arrow-position :as data-line}]
         (cond
-          (= "" replacement-text)
-          [res true]
+          (and folding-head? (= "" text))
+          [res (inc fold-level)]
 
-          (and removing? (re-find #"end-fold" text))
-          [res false]
+          (and (= fold-level removing-level)
+               (re-find #"end-fold" original-text))
+          [res nil]
 
           :else
-          [(conj res data-line) removing?]))
-      [[] false] data-lines)))
+          [(conj res data-line) removing-level]))
+      [[] nil] data-lines)))
 
 (defn finish-line-edition
   [app-state [event]]
   (let [state-cardume-text (cardume-text app-state)
         new-cardume-text (->> (str/split state-cardume-text #"\n")
-                           (map #(into {:text %}))
+                           (map #(into {:original-text %}))
                            (process-cardume)
                            (remove-folds-without-header)
-                           (map :text)
+                           (map :original-text)
                            (str/join "\n"))]
     (.clearSelection ^js/dragselect @drag-select)
     (-> app-state
@@ -222,6 +230,20 @@
   (fn [element-id]
     (reagent/after-render #(some-> (js/document.getElementById element-id) .focus))))
 
+(defn get-pred
+  "Returns the first element of coll that satisfy the predicate f."
+  [f coll]
+  (some #(when (f %) %) coll))
+
+(defn determine-end-of-fold-group
+  [cardume-text line-num]
+  (->> cardume-text
+    cardume-view
+    (get-pred (fn [{:keys [original-text fold-starter-line]}]
+                (and (re-find #"end-fold" original-text)
+                     (= fold-starter-line line-num))))
+    :id))
+
 (defn lines-select-mouse-up
   [{app-state :db} [event selected-lines]]
   (let [updated-app-state (assoc-in app-state [:ui :cardume :selected-lines] selected-lines)
@@ -229,12 +251,14 @@
         sorted-selected (sort (map js/parseInt selected-lines))
         first-selected (first sorted-selected)
         last-selected (last sorted-selected)
-        _ (js/console.log "first "first-selected " last "last-selected)
         state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
+        end-fold-line (if (fold-header (get lines last-selected))
+                        (determine-end-of-fold-group state-cardume-text last-selected)
+                        (+ 2 last-selected))
         new-lines (-> lines
                     (insert-at first-selected "% closed-fold ")
-                    (insert-at (+ 2 last-selected) "% end-fold"))
+                    (insert-at end-fold-line "% end-fold"))
         new-cardume-text (str/join "\n" new-lines)
         editing (get-in app-state [:ui :cardume :editing-line])]
     (if (or (< num-selected 2) editing)
@@ -264,7 +288,7 @@
 
 (declare initialize-dragselect)
 
-(defn cardume-line-pre-el [idx {:keys [text fold-level replacement-text fold-status]}]
+(defn cardume-line-pre-el [idx {:keys [text fold-level toggle-event arrow-position]}]
   [(with-mount-fn
      [:pre.selectable
       {:id idx
@@ -275,21 +299,10 @@
        :style {:margin "0"
                :padding "0 10px"
                :padding-left (str (+ 10 (* 15 fold-level))"px")}}
-      (cond
-        (and replacement-text (= "open" fold-status))
-        [:<> [:b {:onClick #(>evt [::toggle-cardume idx "closed"])} "v "] replacement-text]
-
-        (and replacement-text (= "closed" fold-status))
-        [:<> [:b {:onClick #(>evt [::toggle-cardume idx "open"])}  "> "] replacement-text]
-
-        (= "closed" fold-status)
-        ""
-
-        (re-find #"end-fold" text)
-        ""
-
-        :else
-        text)])])
+      [:<>
+       [:b {:onClick #(>evt [::toggle-cardume idx toggle-event])}
+        arrow-position]
+       text]])])
 
 (defn cardume []
   (let [editing-line (js/parseInt (<sub [::editing-line]))]
@@ -305,20 +318,20 @@
                :width "400px"}}
       (into [:<>]
         (for [idx (range (count (<sub [::cardume-view])))]
-          (let [{:keys [text replacement-text] :as line-data} (<sub [::cardume-line idx])]
+          (let [{:keys [text original-text] :as line-data} (<sub [::cardume-line idx])]
             (if (= editing-line idx)
               [:input#input-line.selectable
                {:onKeyPress #(when (= (.-key %) "Enter") (>evt [::finish-line-edition]))
                 :onBlur #(>evt [::finish-line-edition])
-                :value (or replacement-text text)
-                :onChange #(>evt [::set-cardume-line-text idx text (-> % .-target .-value)])}]
+                :value text
+                :onChange #(>evt [::set-cardume-line-text idx original-text (-> % .-target .-value)])}]
               [cardume-line-pre-el idx line-data]))))]]))
 
 (defn data-lines []
   [:div
    (map-indexed
      (fn [idx line]
-       ^{:key line}
+       ^{:key (str idx line)}
        [:pre.selectable
         {:id idx
          :style {:margin "0"
