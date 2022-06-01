@@ -132,7 +132,7 @@
 
 (defn cardume-line
   [cardume-view [_ line-num]]
-  (nth cardume-view line-num))
+  (nth cardume-view (js/parseInt line-num)))
 (re-frame/reg-sub
   ::cardume-line
   :<- [::cardume-view]
@@ -177,7 +177,8 @@
   [app-state [event line-number new-state]]
   (let [state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (update lines line-number str/replace #"open|closed" new-state)]
+        _ (js/console.log "line-number" line-number)
+        updated-lines (update lines (js/parseInt line-number) str/replace #"open|closed" new-state)]
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::toggle-cardume toggle-cardume)
 
@@ -213,7 +214,7 @@
 (re-frame/reg-event-db ::finish-line-edition finish-line-edition)
 
 (defn insert-at [coll idx el]
-  (let [[before after] (split-at idx coll)]
+  (let [[before after] (split-at (js/parseInt idx) coll)]
     (concat before [el] after)))
 
 (re-frame/reg-fx
@@ -225,9 +226,10 @@
   [{app-state :db} [event selected-lines]]
   (let [updated-app-state (assoc-in app-state [:ui :cardume :selected-lines] selected-lines)
         num-selected (count selected-lines)
-        sorted-selected (sort selected-lines)
-        first-selected (js/parseInt (first sorted-selected))
-        last-selected (js/parseInt (last sorted-selected))
+        sorted-selected (sort (map js/parseInt selected-lines))
+        first-selected (first sorted-selected)
+        last-selected (last sorted-selected)
+        _ (js/console.log "first "first-selected " last "last-selected)
         state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
         new-lines (-> lines
@@ -248,14 +250,14 @@
   (let [[_ folding-header] (re-find #"(.*\w+-fold )" original-text)
         state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (assoc lines line-num (str folding-header new-text))]
+        updated-lines (assoc lines (js/parseInt line-num) (str folding-header new-text))]
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::set-cardume-line-text set-cardume-line-text)
 
 (defn set-editing-line
   [{app-state :db} [_event line-num]]
   {:focus-to-element "input-line"
-   :db (assoc-in app-state [:ui :cardume :editing-line] line-num)})
+   :db (assoc-in app-state [:ui :cardume :editing-line] (js/parseInt line-num))})
 (re-frame/reg-event-fx ::set-editing-line set-editing-line)
 
 ;; ---- Views ----
@@ -367,22 +369,22 @@
              #js {:selectables (js/document.getElementsByClassName "selectable")
                   :draggability false
                   :area (js/document.getElementById "cardume")})]
-    (.subscribe ds "elementselect" (fn [e]
+    (.subscribe ds "elementselect" (fn [e]))
                                      ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
-                                     (js/console.log "selected" (clj->js (.-id (.-item e))))))
-    (.subscribe ds "elementunselect" (fn [e]
-                                       (js/console.log "unselected" (clj->js (.-id (.-item e))))))
+                                     ;; (js/console.log "selected" (clj->js (.-id (.-item e))))))
+    (.subscribe ds "elementunselect" (fn [e]))
+                                       ;; (js/console.log "unselected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "callback" (fn [e]
                                 (re-frame/dispatch-sync [::lines-select-mouse-up (mapv (fn [i] (.-id i)) (.-items e))])
                                 ;; (when (<sub [::editing-line])
-                                ;;   (.clearSelection ds))
+                                (.clearSelection ds)
                                 ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
                                 (js/console.log "mouse up!"
                                                 (clj->js (map (fn [i] (.-id i)) (.-items e))))))
     ds))
 
 (def initial-state
-  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->B: c\n% end-fold\nB->>B: d"}
+  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->>B: c\n% end-fold\nB->>B: d\nB-->A: e\nB->>A: f\nA->>A: g\nA->>B: h"}
    :ui {:cardume {:selected-lines {}
                   :editing-line nil}
         :mode {:selected "Cardume"
