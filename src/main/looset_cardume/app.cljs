@@ -53,40 +53,6 @@
   (get-in app-state [:ui :mode :selected] "Cardume"))
 (re-frame/reg-sub ::selected-mode selected-mode)
 
-(defn process-mermaid [lines]
-  (first
-    (reduce
-      (fn [[r folding?] line]
-        (let [[_ fold-status fold-replacement] (fold-header line)
-              end-folding? (re-find #"end-fold" line)]
-          (cond
-            (and (not folding?) (= fold-status "closed"))
-            [(conj r fold-replacement) true]
-
-            (and (not folding?) (= fold-status "open"))
-            [r false]
-
-            end-folding?
-            [r false]
-
-            (not folding?)
-            [(conj r line) false]
-
-            :else ;; still-folding
-            [r true])))
-      [[] false] lines)))
-
-(defn mermaid-text
-  [cardume-text]
-  (as-> cardume-text $
-    (str/split $ #"\n")
-    (process-mermaid $)
-    (str/join "\n" $)))
-(re-frame/reg-sub
-  ::mermaid-text
-  :<- [::valid-cardume-text]
-  mermaid-text)
-
 (defn process-cardume [data-lines]
   (first
     (reduce
@@ -110,16 +76,28 @@
           [(conj res (-> data-line
                        (assoc :id idx)
                        (assoc :text text)
+                       (assoc :fh-status (when show-fold-head? extracted-fold-status)) ;; fh stands for folding-head
                        (assoc :arrow-position (when show-fold-head? arrow-position))
                        (assoc :toggle-event (when show-fold-head? toggle-event))
                        (assoc :fold-level (count folding-stack))
                        (assoc :fold-starter-line starter-line)))
-                       ;; (assoc :fold-status fold-status)
-                       ;; (assoc :stack-count (count folding-stack))
-                       ;; (assoc :end-folding? end-folding?)))
            (inc idx)
            new-folding-stack]))
       [[] 0 '()] data-lines)))
+
+(defn mermaid-text
+  [cardume-text]
+  (->> (str/split cardume-text #"\n")
+    (map #(into {:original-text %}))
+    (process-cardume)
+    (remove #(= "open" (:fh-status %)))
+    (map :text)
+    (remove str/blank?)
+    (str/join "\n")))
+(re-frame/reg-sub
+  ::mermaid-text
+  :<- [::valid-cardume-text]
+  mermaid-text)
 
 (defn cardume-view
   [cardume-text]
@@ -164,7 +142,7 @@
 
 (defn set-cardume-text
   [app-state [_event v]]
-  (try (.parse mermaid (trim-lines v))
+  (try (.parse mermaid (trim-lines (mermaid-text v)))
        (-> app-state
          (assoc-in [:domain :cardume-text] v)
          (assoc-in [:ui :validation :valid-cardume-text] v)
