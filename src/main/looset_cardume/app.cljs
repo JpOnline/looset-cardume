@@ -291,6 +291,26 @@
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::toggle-all toggle-all)
 
+;; -- Debug views --
+
+(defn data-lines []
+  [:div
+   (map-indexed
+     (fn [idx line]
+       ^{:key (str idx line)}
+       [:pre.selectable
+        {:id idx
+         :style {:margin "0"
+                 :padding "2px 0px"}}
+        line])
+     (<sub [::cardume-view]))])
+
+(defn cardume-text-area []
+  [:textarea
+   {:style {:height 200 :width 400}
+    :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
+    :value (<sub [::cardume-text])}])
+
 
 ;; ---- Views ----
 
@@ -335,17 +355,26 @@
                 :onChange #(>evt [::set-cardume-line-text idx original-text (-> % .-target .-value)])}]
               [cardume-line-pre-el idx line-data]))))]]))
 
-(defn data-lines []
+(defn mode-comp []
   [:div
-   (map-indexed
-     (fn [idx line]
-       ^{:key (str idx line)}
-       [:pre.selectable
-        {:id idx
-         :style {:margin "0"
-                 :padding "2px 0px"}}
-        line])
-     (<sub [::cardume-view]))])
+   "Mode:"
+   (map (fn [{:keys [id checked?]}]
+          ^{:key id}
+          [:<>
+           [:input {:checked checked?
+                    :onChange #(>evt [::select-mode id])
+                    :type "radio"
+                    :id id
+                    :name "mode"
+                    :value id}]
+           [:label {:for id} id]])
+        (<sub [::modes]))])
+
+(defn code-comp []
+  (case (<sub [::selected-mode])
+    "Cardume" [cardume]
+    "Cardume Text" [:pre (<sub [::cardume-text])]
+    "Mermaid Text" [:pre (<sub [::mermaid-text])]))
 
 (defn diagram-comp []
   (let [mermaid-text (<sub [::mermaid-text])
@@ -356,37 +385,24 @@
          :style {:opacity (if valid-diagram? "100%" "40%")}}
         mermaid-text])]))
 
-(defn main []
+(defn shortcut-buttons []
   [:<>
-   [:h1 "Looset Cardume"]
-   [:div
-    "Mode:"
-    (map (fn [{:keys [id checked?]}]
-           ^{:key id}
-           [:<>
-            [:input {:checked checked?
-                     :onChange #(>evt [::select-mode id])
-                     :type "radio"
-                     :id id
-                     :name "mode"
-                     :value id}]
-            [:label {:for id} id]])
-         (<sub [::modes]))]
-   [:textarea
-    {:style {:height 200 :width 400}
-     :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
-     :value (<sub [::cardume-text])}]
-   [data-lines]
-   (case (<sub [::selected-mode])
-     "Cardume" [cardume]
-     "Cardume Text" [:pre (<sub [::cardume-text])]
-     "Mermaid Text" [:pre (<sub [::mermaid-text])])
    [:input {:type "button"
             :onClick #(>evt [::toggle-all "closed"])
             :value "Collapse All"}]
    [:input {:type "button"
             :onClick #(>evt [::toggle-all "open"])
-            :value "Expand All"}]
+            :value "Expand All"}]])
+
+
+(defn main []
+  [:<>
+   [:h1 "Looset Cardume"]
+   [mode-comp]
+   [cardume-text-area]
+   [data-lines]
+   [code-comp]
+   [shortcut-buttons]
    [diagram-comp]])
 
 ;; ---- Initialization ----
@@ -396,18 +412,9 @@
              #js {:selectables (js/document.getElementsByClassName "selectable")
                   :draggability false
                   :area (js/document.getElementById "cardume")})]
-    (.subscribe ds "elementselect" (fn [e]))
-                                     ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
-                                     ;; (js/console.log "selected" (clj->js (.-id (.-item e))))))
-    (.subscribe ds "elementunselect" (fn [e]))
-                                       ;; (js/console.log "unselected" (clj->js (.-id (.-item e))))))
     (.subscribe ds "callback" (fn [e]
                                 (re-frame/dispatch-sync [::lines-select-mouse-up (mapv (fn [i] (.-id i)) (.-items e))])
-                                ;; (when (<sub [::editing-line])
-                                (.clearSelection ds)
-                                ;; (.addSelectables ds (js/document.getElementsByClassName "selectable"))
-                                (js/console.log "mouse up!"
-                                                (clj->js (map (fn [i] (.-id i)) (.-items e))))))
+                                (.clearSelection ds)))
     ds))
 
 (def initial-state
@@ -424,17 +431,14 @@
     #js {:theme "forest"}))
 
 (re-frame/reg-event-db ::set-app-state
-  (fn [_ [_event application-state]]
-    (-> application-state
-      (assoc-in [:ui :validation :valid-diagram?] true)
-      (assoc-in [:ui :validation :valid-cardume-text] (get-in application-state [:domain :cardume-text])))))
+  (fn [_ [event application-state]]
+    (set-cardume-text application-state [event (get-in application-state [:domain :cardume-text])])))
 
 (defn init-state []
   (re-frame/dispatch-sync [::set-app-state initial-state]))
 
 (defn ^:dev/after-load mount-app-element []
   (when ^boolean js/goog.DEBUG ;; Code removed in production
-    ;; (day8.re-frame-10x/show-panel! false)
     (re-frame/clear-subscription-cache!))
   (when-let [el (.getElementById js/document "root")]
     (reagent.dom/render [main] el))
