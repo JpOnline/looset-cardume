@@ -283,16 +283,24 @@
         line])
      (<sub [::cardume-view]))])
 
-(defn cardume-text-area []
-  [:textarea
-   {:style {:height 200 :width 400}
-    :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
-    :value (<sub [::cardume-text])}])
-
-
 ;; ---- Views ----
 
 (declare initialize-dragselect)
+
+(def code-font-family "dejavu sans mono, monospace")
+(def code-font-size "small")
+(def code-margin "0")
+(def code-padding "0 10px")
+
+(defn cardume-text-area []
+  [:textarea
+   {:style {:height 200 :width 400
+            :margin code-margin
+            :padding code-padding
+            :font-family code-font-family
+            :font-size code-font-size}
+    :onChange #(>evt [::set-cardume-text (-> % .-target .-value)])
+    :value (<sub [::cardume-text])}])
 
 (defn cardume-line-pre-el [idx {:keys [text fold-level toggle-event arrow-position]}]
   [(with-mount-fn
@@ -302,8 +310,10 @@
                                (some-> ^js/dragselect @drag-select .stop)
                                (reset! drag-select (initialize-dragselect)))
        :onDoubleClick #(>evt [::set-editing-line idx])
-       :style {:margin "0"
-               :padding "0 10px"
+       :style {:margin code-margin
+               :padding code-padding
+               :font-family code-font-family
+               :font-size code-font-size
                :padding-left (str (+ 10 (* 15 fold-level))"px")}}
       [:<>
        [:b {:onClick #(>evt [::toggle-cardume idx toggle-event])}
@@ -312,26 +322,21 @@
 
 (defn cardume []
   (let [editing-line (js/parseInt (<sub [::editing-line]))]
-    [:<>
-     [:style
-      "
-      .ds-selected {
-        background-color: lightgray;
-      }
-      "]
-     [:div#cardume
-      {:style {:user-select "none"
-               :width "400px"}}
-      (into [:<>]
-        (for [idx (range (count (<sub [::cardume-view])))]
-          (let [{:keys [text original-text] :as line-data} (<sub [::cardume-line idx])]
-            (if (= editing-line idx)
-              [:input#input-line.selectable
-               {:onKeyPress #(when (= (.-key %) "Enter") (>evt [::finish-line-edition]))
-                :onBlur #(>evt [::finish-line-edition])
-                :value text
-                :onChange #(>evt [::set-cardume-line-text idx original-text (-> % .-target .-value)])}]
-              [cardume-line-pre-el idx line-data]))))]]))
+    [:div#cardume
+     {:style {:user-select "none"
+              :width "400px"}}
+     (into [:<>]
+           (for [idx (range (count (<sub [::cardume-view])))]
+             (let [{:keys [text original-text] :as line-data} (<sub [::cardume-line idx])]
+               (if (= editing-line idx)
+                 [:input#input-line.selectable
+                  {:onKeyPress #(when (= (.-key %) "Enter") (>evt [::finish-line-edition]))
+                   :onBlur #(>evt [::finish-line-edition])
+                   :style {:font-family code-font-family
+                           :font-size code-font-size}
+                   :value text
+                   :onChange #(>evt [::set-cardume-line-text idx original-text (-> % .-target .-value)])}]
+                 [cardume-line-pre-el idx line-data]))))]))
 
 (defn mode-comp []
   [:div
@@ -351,8 +356,13 @@
 (defn code-comp []
   (case (<sub [::selected-mode])
     "Cardume" [cardume]
-    "Cardume Text" [:pre (<sub [::cardume-text])]
-    "Mermaid Text" [:pre (<sub [::mermaid-text])]))
+    "Cardume Text" [cardume-text-area]
+    "Mermaid Text" [:pre
+                    {:style {:margin code-margin
+                             :padding code-padding
+                             :font-family code-font-family
+                             :font-size code-font-size}}
+                    (<sub [::mermaid-text])]))
 
 (defn diagram-comp []
   (let [mermaid-text (<sub [::mermaid-text])
@@ -372,13 +382,24 @@
             :onClick #(>evt [::toggle-all "open"])
             :value "Expand All"}]])
 
+(defn global-style []
+  [:style
+   "
+   @import url('https://fonts.googleapis.com/css2?family=Quattrocento:wght@400;700&display=swap');
+
+   .ds-selected {
+     background-color: lightgray;
+   }
+   "])
 
 (defn main []
   [:<>
-   [:h1 "Looset Cardume"]
+   [global-style]
+   [:h1 {:style {:font-family "quattrocento, serif"}}
+    "Looset Cardume"]
    [mode-comp]
-   [cardume-text-area]
-   [data-lines]
+   ;; [cardume-text-area]
+   ;; [data-lines]
    [code-comp]
    [shortcut-buttons]
    [diagram-comp]])
