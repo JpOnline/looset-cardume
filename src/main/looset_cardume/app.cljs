@@ -135,7 +135,7 @@
 
 (defn left-panel-size
   [app-state]
-  (get-in app-state [:ui :left-panel-size] 400))
+  (get-in app-state [:ui :panels :left-panel-size] "400px"))
 (re-frame/reg-sub ::left-panel-size left-panel-size)
 
 ;; ---- EVENTS ----
@@ -276,8 +276,15 @@
 
 (defn set-panels-size
   [app-state [_event new-size]]
-  (assoc-in app-state [:ui :left-panel-size] new-size))
+  (if (get-in app-state [:ui :panels :resizing-panels])
+    (assoc-in app-state [:ui :panels :left-panel-size] (str new-size"px"))
+    app-state))
 (re-frame/reg-event-db ::set-panels-size set-panels-size)
+
+(defn resizing-panels
+  [app-state [_event new-state]]
+  (assoc-in app-state [:ui :panels :resizing-panels] new-state))
+(re-frame/reg-event-db ::resizing-panels resizing-panels)
 
 ;; -- Debug views --
 
@@ -298,6 +305,9 @@
 (declare initialize-dragselect)
 
 (def code-font-family "dejavu sans mono, monospace")
+(def quattrocento-font "Quattrocento, serif")
+(def proza-font "Proza Libre, sans-serif")
+(def roboto-mono-font "Roboto Mono, monospace")
 (def code-font-size "small")
 (def code-margin "0")
 (def code-padding "0 10px")
@@ -371,7 +381,8 @@
                     {:style {:margin code-margin
                              :padding code-padding
                              :font-family code-font-family
-                             :font-size code-font-size}}
+                             :font-size code-font-size
+                             :user-select "text"}}
                     (<sub [::mermaid-text])]))
 
 (defn diagram-comp []
@@ -395,7 +406,7 @@
 (defn global-style []
   [:style
    "
-   @import url('https://fonts.googleapis.com/css2?family=Quattrocento:wght@400;700&display=swap');
+   @import url('https://fonts.googleapis.com/css2?family=Proza+Libre:wght@400;500;600;700&family=Quattrocento&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
 
    .ds-selected {
      background-color: lightgray;
@@ -408,23 +419,26 @@
                  :width "6px"
                  :height "100vh"
                  :cursor "ew-resize"}
-         :onClick #(js/console.log %)}
+         :onMouseDown #(>evt [::resizing-panels true])}
    [:div {:style {:border-left "1px solid gray"}}]])
 
 (defn main []
   [:<>
    [global-style]
    [:div#panel-container
-    {:style {:display "flex"}}
+    {:style {:display "flex"
+             :user-select "none"}}
     [:div#left-panel
-     {:style {:width (str (<sub [::left-panel-size])"px")}}
+     {:style {:width (<sub [::left-panel-size])
+              :min-width "20vw"}}
      [:h1 {:style {:font-family "quattrocento, serif"}}
       "Looset Cardume"]
      [shortcut-buttons]
      [diagram-comp]]
     [panel-splitter]
     [:div#right-panel
-     {:style {:width "10px"}} ;; Just a testing value
+     {:style {:width (str "calc(100vw - "(<sub [::left-panel-size])")") ;; Just a testing value
+              :min-width "20vw"}}
      [mode-comp]
      ;; [cardume-text-area]
      ;; [data-lines]
@@ -436,6 +450,11 @@
   (js/document.body.addEventListener
     "mousemove"
     #(>evt [::set-panels-size (-> % .-x)])))
+
+(defn init-mouseup []
+  (js/document.body.addEventListener
+    "mouseup"
+    #(>evt [::resizing-panels false])))
 
 (defn initialize-dragselect []
   (let [ds (dragselect.
@@ -449,7 +468,9 @@
 
 (def initial-state
   {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->>B: c\n% end-fold\nB->>B: d\nB-->A: e\nB->>A: f\nA->>A: g\nA->>B: h"}
-   :ui {:cardume {:selected-lines {}
+   :ui {:panels {:resizing-panels false
+                 :left-panel-size "65vw"}
+        :cardume {:selected-lines {}
                   :editing-line nil}
         :mode {:selected "Cardume"
                :items [{:id "Cardume"}
@@ -479,4 +500,5 @@
   (init-state)
   (initialize-mermaid)
   (init-mousemove)
+  (init-mouseup)
   (mount-app-element))
