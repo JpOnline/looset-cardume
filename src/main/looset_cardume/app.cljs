@@ -133,6 +133,11 @@
   (get-in app-state [:ui :cardume :editing-line] nil))
 (re-frame/reg-sub ::editing-line editing-line)
 
+(defn left-panel-size
+  [app-state]
+  (get-in app-state [:ui :left-panel-size] 400))
+(re-frame/reg-sub ::left-panel-size left-panel-size)
+
 ;; ---- EVENTS ----
 
 (defn trim-lines [txt]
@@ -269,6 +274,11 @@
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::toggle-all toggle-all)
 
+(defn set-panels-size
+  [app-state [_event new-size]]
+  (assoc-in app-state [:ui :left-panel-size] new-size))
+(re-frame/reg-event-db ::set-panels-size set-panels-size)
+
 ;; -- Debug views --
 
 (defn data-lines []
@@ -392,19 +402,40 @@
    }
    "])
 
+(defn panel-splitter []
+  [:div {:style {:display "flex"
+                 :justify-content "center"
+                 :width "6px"
+                 :height "100vh"
+                 :cursor "ew-resize"}
+         :onClick #(js/console.log %)}
+   [:div {:style {:border-left "1px solid gray"}}]])
+
 (defn main []
   [:<>
    [global-style]
-   [:h1 {:style {:font-family "quattrocento, serif"}}
-    "Looset Cardume"]
-   [mode-comp]
-   ;; [cardume-text-area]
-   ;; [data-lines]
-   [code-comp]
-   [shortcut-buttons]
-   [diagram-comp]])
+   [:div#panel-container
+    {:style {:display "flex"}}
+    [:div#left-panel
+     {:style {:width (str (<sub [::left-panel-size])"px")}}
+     [:h1 {:style {:font-family "quattrocento, serif"}}
+      "Looset Cardume"]
+     [shortcut-buttons]
+     [diagram-comp]]
+    [panel-splitter]
+    [:div#right-panel
+     {:style {:width "10px"}} ;; Just a testing value
+     [mode-comp]
+     ;; [cardume-text-area]
+     ;; [data-lines]
+     [code-comp]]]])
 
 ;; ---- Initialization ----
+
+(defn init-mousemove []
+  (js/document.body.addEventListener
+    "mousemove"
+    #(>evt [::set-panels-size (-> % .-x)])))
 
 (defn initialize-dragselect []
   (let [ds (dragselect.
@@ -447,4 +478,5 @@
 (defn init []
   (init-state)
   (initialize-mermaid)
+  (init-mousemove)
   (mount-app-element))
