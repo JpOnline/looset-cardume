@@ -391,11 +391,15 @@
     [(with-mount-fn
        [:div#sequence-1.mermaid
         {:component-did-mount #(.contentLoaded mermaid)
-         :style {:opacity (if valid-diagram? "100%" "40%")}}
+         :style {:opacity (if valid-diagram? "100%" "40%")
+                 :overflow "auto"}}
         mermaid-text])]))
 
 (defn shortcut-buttons []
-  [:<>
+  [:div#shortcut-buttons
+   {:style {:display "flex"
+            :justify-content "space-evenly"
+            :padding "10px"}}
    [:input {:type "button"
             :onClick #(>evt [::toggle-all "closed"])
             :value "Collapse All"}]
@@ -404,14 +408,19 @@
             :value "Expand All"}]])
 
 (defn global-style []
-  [:style
-   "
-   @import url('https://fonts.googleapis.com/css2?family=Proza+Libre:wght@400;500;600;700&family=Quattrocento&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
+  (let [zoom 1 #_(<sub [::mouse-position])]
+    [:style
+     (str "
+     @import url('https://fonts.googleapis.com/css2?family=Proza+Libre:wght@400;500;600;700&family=Quattrocento&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
 
-   .ds-selected {
-     background-color: lightgray;
-   }
-   "])
+     .ds-selected {
+       background-color: lightgray;
+     }
+
+     #sequence-1 svg {
+       transform: scale("zoom");
+     }
+     ")]))
 
 (defn panel-splitter []
   [:div {:style {:display "flex"
@@ -427,14 +436,20 @@
    [global-style]
    [:div#panel-container
     {:style {:display "flex"
-             :user-select "none"}}
+             :user-select "none"
+             :max-height "100vh"}}
     [:div#left-panel
      {:style {:width (<sub [::left-panel-size])
-              :min-width "20vw"}}
-     [:h1 {:style {:font-family "quattrocento, serif"}}
+              :min-width "20vw"
+              :display "flex"
+              :flex-direction "column"}}
+     [:div {:style {:font-family quattrocento-font
+                    :font-size "2em"
+                    :padding "10px"
+                    :border-bottom "1px solid gray"}}
       "Looset Cardume"]
-     [shortcut-buttons]
-     [diagram-comp]]
+     [diagram-comp]
+     [shortcut-buttons]]
     [panel-splitter]
     [:div#right-panel
      {:style {:width (str "calc(100vw - "(<sub [::left-panel-size])")") ;; Just a testing value
@@ -479,7 +494,7 @@
 
 (defn initialize-mermaid []
   (.initialize mermaid
-    #js {:theme "forest"}))
+    #js {:theme "default"}))
 
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [event application-state]]
