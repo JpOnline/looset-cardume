@@ -374,16 +374,18 @@
         (<sub [::modes]))])
 
 (defn code-comp []
-  (case (<sub [::selected-mode])
-    "Cardume" [cardume]
-    "Cardume Text" [cardume-text-area]
-    "Mermaid Text" [:pre
-                    {:style {:margin code-margin
-                             :padding code-padding
-                             :font-family code-font-family
-                             :font-size code-font-size
-                             :user-select "text"}}
-                    (<sub [::mermaid-text])]))
+  [:div
+   {:style {:overflow "auto"}}
+   (case (<sub [::selected-mode])
+     "Cardume" [cardume]
+     "Cardume Text" [cardume-text-area]
+     "Mermaid Text" [:pre
+                     {:style {:margin code-margin
+                              :padding code-padding
+                              :font-family code-font-family
+                              :font-size code-font-size
+                              :user-select "text"}}
+                     (<sub [::mermaid-text])])])
 
 (defn diagram-comp []
   (let [mermaid-text (<sub [::mermaid-text])
@@ -392,7 +394,8 @@
        [:div#sequence-1.mermaid
         {:component-did-mount #(.contentLoaded mermaid)
          :style {:opacity (if valid-diagram? "100%" "40%")
-                 :overflow "auto"}}
+                 :overflow "auto"
+                 :flex-grow "1"}}
         mermaid-text])]))
 
 (defn shortcut-buttons []
@@ -453,6 +456,8 @@
     [panel-splitter]
     [:div#right-panel
      {:style {:width (str "calc(100vw - "(<sub [::left-panel-size])")") ;; Just a testing value
+              :display "flex"
+              :flex-direction "column"
               :min-width "20vw"}}
      [mode-comp]
      ;; [cardume-text-area]
