@@ -375,7 +375,8 @@
 
 (defn code-comp []
   [:div
-   {:style {:overflow "auto"}}
+   {:style {:overflow "auto"
+            :padding "7px 0"}}
    (case (<sub [::selected-mode])
      "Cardume" [cardume]
      "Cardume Text" [cardume-text-area]
@@ -421,6 +422,17 @@
     [:style
      (str "
      @import url('https://fonts.googleapis.com/css2?family=Proza+Libre:wght@400;500;600;700&family=Quattrocento&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
+
+      *::-webkit-scrollbar-track {
+          background: rgb(51 51 51 / 10%);
+      }
+      *::-webkit-scrollbar-thumb {
+          background: #bbb;
+      }
+      *::-webkit-scrollbar {
+          width: 0.4em;
+          height: 0.4em;
+      }
 
      .ds-selected {
        background-color: lightgray;
