@@ -141,6 +141,11 @@
   (get-in app-state [:ui :panels :left-panel-size] "400px"))
 (re-frame/reg-sub ::left-panel-size left-panel-size)
 
+(defn diagram-zoom
+  [app-state]
+  (get-in app-state [:ui :diagram :zoom] 1))
+(re-frame/reg-sub ::diagram-zoom diagram-zoom)
+
 ;; ---- EVENTS ----
 
 (defn trim-lines [txt]
@@ -277,17 +282,39 @@
     (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
 (re-frame/reg-event-db ::toggle-all toggle-all)
 
-(defn set-panels-size
-  [app-state [_event new-size]]
-  (if (get-in app-state [:ui :panels :resizing-panels])
-    (assoc-in app-state [:ui :panels :left-panel-size] (str new-size"px"))
-    app-state))
-(re-frame/reg-event-db ::set-panels-size set-panels-size)
+(defn mouse-moved
+  [app-state [_event x y]]
+  (let [[_ y-init] (get-in app-state [:ui :diagram :zoom-start-point])
+        resizing-panels? (get-in app-state [:ui :panels :resizing-panels])
+        zooming? (get-in app-state [:ui :diagram :zooming?])
+        init-zoom (get-in app-state [:ui :diagram :init-zoom] 1)]
+    (cond-> app-state
+      resizing-panels?
+      (assoc-in [:ui :panels :left-panel-size] (str x"px"))
+
+      zooming?
+      (assoc-in [:ui :diagram :zoom] (+ init-zoom (* 0.008 (- y y-init)))))))
+(re-frame/reg-event-db ::mouse-moved mouse-moved)
 
 (defn resizing-panels
   [app-state [_event new-state]]
   (assoc-in app-state [:ui :panels :resizing-panels] new-state))
 (re-frame/reg-event-db ::resizing-panels resizing-panels)
+
+(defn mouse-up
+  [app-state]
+  (-> app-state
+    (resizing-panels [::mouse-up false])
+    (assoc-in [:ui :diagram :zooming?] false)))
+(re-frame/reg-event-db ::mouse-up mouse-up)
+
+(defn mark-zoom-start-point
+  [app-state [_event x y]]
+  (-> app-state
+    (assoc-in [:ui :diagram :zooming?] true)
+    (assoc-in [:ui :diagram :zoom-start-point] [x y])
+    (assoc-in [:ui :diagram :init-zoom] (get-in app-state [:ui :diagram :zoom]))))
+(re-frame/reg-event-db ::mark-zoom-start-point mark-zoom-start-point)
 
 ;; -- Debug views --
 
@@ -424,6 +451,7 @@
     [(with-mount-fn
        [:div#sequence-1.mermaid
         {:component-did-mount #(.contentLoaded mermaid)
+         :onMouseDown #(>evt [::mark-zoom-start-point (-> % .-clientX) (-> % .-clientY)])
          :style {:opacity (if valid-diagram? "100%" "40%")
                  :overflow "auto"
                  :flex-grow "1"}}
@@ -448,7 +476,7 @@
      [:path {:fill-rule "evenodd" :d "M1 8a.5.5 0 0 1 .5-.5h13a.5.5 0 0 1 0 1h-13A.5.5 0 0 1 1 8zM7.646.146a.5.5 0 0 1 .708 0l2 2a.5.5 0 0 1-.708.708L8.5 1.707V5.5a.5.5 0 0 1-1 0V1.707L6.354 2.854a.5.5 0 1 1-.708-.708l2-2zM8 10a.5.5 0 0 1 .5.5v3.793l1.146-1.147a.5.5 0 0 1 .708.708l-2 2a.5.5 0 0 1-.708 0l-2-2a.5.5 0 0 1 .708-.708L7.5 14.293V10.5A.5.5 0 0 1 8 10z"}]]]])
 
 (defn global-style []
-  (let [zoom 1 #_(<sub [::mouse-position])]
+  (let [zoom (<sub [::diagram-zoom])]
     [:style
      (str "
      @import url('https://fonts.googleapis.com/css2?family=Proza+Libre:wght@400;500;600;700&family=Quattrocento&family=Roboto+Mono:wght@300;400;500;600;700&display=swap');
@@ -470,6 +498,8 @@
 
      #sequence-1 svg {
        transform: scale("zoom");
+       transform-origin: top left;
+       cursor: crosshair;
      }
 
      .button-1 {
@@ -548,12 +578,12 @@
 (defn init-mousemove []
   (js/document.body.addEventListener
     "mousemove"
-    #(>evt [::set-panels-size (-> % .-x)])))
+    #(>evt [::mouse-moved (-> % .-x) (-> % .-y)])))
 
 (defn init-mouseup []
   (js/document.body.addEventListener
     "mouseup"
-    #(>evt [::resizing-panels false])))
+    #(>evt [::mouse-up false])))
 
 (defn initialize-dragselect []
   (let [ds (dragselect.
@@ -571,7 +601,9 @@
                  :left-panel-size "65vw"}
         :cardume {:selected-lines {}
                   :editing-line nil}
-        :mode {:selected "cardume"}}})
+        :mode {:selected "cardume"}
+        :diagram {:zoom 1
+                  :zooming? true}}})
 
 (defn initialize-mermaid []
   (.initialize mermaid
