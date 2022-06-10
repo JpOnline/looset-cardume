@@ -40,18 +40,21 @@
   (get-in app-state [:ui :validation :valid-cardume-text] ""))
 (re-frame/reg-sub ::valid-cardume-text valid-cardume-text)
 
-(defn modes
-  [app-state]
-  (-> app-state
-    (get-in [:ui :mode :items] [])
-    (->> (map #(assoc % :checked? (= (:id %)
-                                     (get-in app-state [:ui :mode :selected] "Cardume")))))))
-(re-frame/reg-sub ::modes modes)
-
 (defn selected-mode
   [app-state]
-  (get-in app-state [:ui :mode :selected] "Cardume"))
+  (get-in app-state [:ui :mode :selected] "cardume"))
 (re-frame/reg-sub ::selected-mode selected-mode)
+
+(defn selected-mode-style
+  [selected-mode [_ component style]]
+  (case [style (= selected-mode component)]
+    [:filter false] "blur(1.5px) grayscale(1)"
+    [:transform false] "scale(0.9)"
+    nil))
+(re-frame/reg-sub
+  ::selected-mode-style
+  :<- [::selected-mode]
+  selected-mode-style)
 
 (defn process-cardume [data-lines]
   (first
@@ -364,8 +367,12 @@
             :justify-content "space-evenly"
             :align-items "center"
             :padding "10px"}}
-   [:svg
-    {:width "40"
+   [:svg#cardume
+    {:onClick #(>evt [::select-mode "cardume"])
+     :style {:cursor "pointer"
+             :filter (<sub [::selected-mode-style "cardume" :filter])
+             :transform (<sub [::selected-mode-style "cardume" :transform])}
+     :width "40"
      :height "40"
      :viewBox "0 0 40 40"
      :xmlns "http://www.w3.org/2000/svg"}
@@ -386,41 +393,21 @@
      {:id "right"
       :style {:fill "#44674b"}
       :d "M 31.765625,4.4088211 V 34.428353 A 19.438021,19.438021 0 0 0 38.876953,19.438118 19.438021,19.438021 0 0 0 31.765625,4.4088211 Z"}]]
-   [:svg
-    {:width "45" :height "30" :viewBox "0 0 24 16" :xmlns "http://www.w3.org/2000/svg"}
+   [:svg#text
+    {:onClick #(>evt [::select-mode "text"])
+     :width "54" :height "36" :viewBox "0 0 24 16" :xmlns "http://www.w3.org/2000/svg"
+     :style {:cursor "pointer"
+             :padding "0 5px"
+             :filter (<sub [::selected-mode-style "text" :filter])
+             :transform (<sub [::selected-mode-style "text" :transform])}}
     [:path {:style {:fill "none" :stroke "#000" :stroke-width "0.264582px" :stop-color "#000000"}
             :d "m 1.371658,10.570294 h 19.849917 z m 0,0 h 19.849917 z m -2e-6,2.200418 H 18.08878 Z M 8.965422,8.369871 h 12.256152 z m 2.19382,-6.60126 H 21.221574 Z M 8.965418,4.010492 H 21.22157 Z m 4e-6,2.158964 H 21.221574 Z M 6.1141241,9.215371 q -0.07808,0 -0.245404,-0.01116 -0.16732,-0.01115 -0.35695,-0.02231 -0.18963,-0.01116 -0.356951,-0.02231 -0.16732,-0.01115 -0.245403,-0.01115 H 4.273598 q -0.07808,0 -0.245403,0.01115 -0.167321,0.01115 -0.356951,0.02231 -0.178475,0.01116 -0.345795,0.02231 -0.167321,0.01116 -0.245404,0.01116 l -0.02231,-0.04462 0.03346,-0.200784 0.05577,-0.04462 q 0.178476,0 0.40157,-0.01116 0.223094,-0.02231 0.312331,-0.100392 0.08924,-0.07808 0.18963,-0.200785 0.100392,-0.122701 0.122702,-0.435033 0.01115,-0.07808 0.01115,-0.178475 0.01116,-0.111547 0.01116,-0.267713 0.01115,-0.156166 0.01115,-0.37926 0,-0.223094 0,-0.557735 V 4.53039 q 0,-0.725056 -0.01115,-1.282791 Q 4.184348,2.67871 4.173198,2.388688 H 4.050496 q -0.557735,0 -0.914685,0.01115 -0.356951,0 -0.580045,0.02231 Q 2.343827,2.433298 2.23228,2.455608 2.131888,2.477918 2.087269,2.511378 1.841865,2.645235 1.786092,3.091423 l -0.04462,0.04462 H 1.484914 l 0.07808,-1.271635 0.04462,-0.100393 0.06693,-0.03346 q 0.08924,0.03346 0.390414,0.06693 0.301177,0.02231 0.658128,0.03346 0.35695,0.01115 0.680436,0.02231 0.334641,0 0.479653,0 h 1.4054921 q 0.145011,0 0.468497,0 0.334641,-0.01116 0.6915919,-0.02231 0.35695,-0.01116 0.658127,-0.03346 0.301177,-0.03346 0.390414,-0.06693 l 0.06693,0.03346 0.04462,0.100393 0.08924,1.271635 H 7.430374 L 7.385754,3.091423 Q 7.329984,2.645235 7.084578,2.511378 7.039958,2.477918 6.928412,2.455608 6.828019,2.433298 6.604925,2.422148 6.3929861,2.399838 6.0360361,2.399838 5.6790851,2.388688 5.1325051,2.388688 h -0.122702 q -0.01115,0.323486 -0.02231,0.847757 0,0.524271 0,1.28279 V 6.5717 q 0,0.401569 0,0.658127 0,0.245404 0,0.412724 0.01115,0.167321 0.01115,0.290023 0.01115,0.111547 0.02231,0.245403 0.02231,0.312332 0.122702,0.435033 0.100392,0.122702 0.18963,0.200785 0.08924,0.07808 0.312331,0.100392 0.223094,0.01116 0.401569,0.01116 l 0.05577,0.04462 0.03346,0.200784 z M 0.19566501,0.18565901 H 22.612891 V 14.645259 H 0.19566501 Z"}]]
-;; <svg
-;;    xmlns="http://www.w3.org/2000/svg">
-;;   <defs>
-;;     <linearGradient
-;;        id="linearGradient83282">
-;;       <stop
-;;          style="stop-color:#5b6cdb;stop-opacity:1"
-;;          offset="0"
-;;          id="stop83424" />
-;;       <stop
-;;          style="stop-color:#864bcb;stop-opacity:1"
-;;          offset="1"
-;;          id="stop83426" />
-;;     </linearGradient>
-;;     <linearGradient
-;;        xlink:href="#linearGradient83282"
-;;        id="linearGradient83914"
-;;        x1="11.463596"
-;;        y1="3.8692131"
-;;        x2="103.4958"
-;;        y2="3.3014159"
-;;        gradientUnits="userSpaceOnUse"
-;;        gradientTransform="translate(-28.239843,35.838281)" />
-;;   </defs>
-;;   <path
-;;      id="path63575"
-;;      style="fill:url(#linearGradient83914);stroke:#000000;stroke-width:0.2"
-;;      d="M 38.516015,0.1 C 17.299425,0.099975 0.099975,17.299426 0.1,38.516015 0.14021,52.650792 7.939263,65.62171 20.404687,72.285547 27.352299,68.095451 38.42437,58.236238 36.150781,38.668359 c 0.03006,-0.324814 -0.190537,-0.193896 -0.417969,-0.216797 0,0 -17.141604,-0.600556 -25.964844,-24.195312 0,0 3.069667,1.539888 4.671876,1.863281 4.731966,0.955108 10.433623,-1.137145 14.480468,0.263672 0,0 2.921463,0.720837 6.824219,5.316406 0,0 0.612641,-7.159933 5.068359,-9.816406 4.455719,-2.6564734 8.863694,-1.47406 12.1875,-8.484375 0,0 9.627799,15.374042 -8.927734,33.582031 -0.105395,-0.03178 10.295363,20.207571 -4.990234,39.910156 20.979109,-0.309313 37.829519,-17.39362 37.849619,-38.375 C 76.932071,17.299423 59.732607,0.099972 38.516015,0.1 Z"/>
-;; </svg>
-   [:svg
-    {:width "40"
+   [:svg#mermaid
+    {:onClick #(>evt [::select-mode "mermaid"])
+     :style {:cursor "pointer"
+             :filter (<sub [::selected-mode-style "mermaid" :filter])
+             :transform (<sub [::selected-mode-style "mermaid" :transform])}
+     :width "40"
      :height "40"
      :viewBox "0 0 80 80"
      :xmlns "http://www.w3.org/2000/svg"}
@@ -428,15 +415,15 @@
      [:linearGradient
       {:id "linearGradient83282"}
       [:stop
-       {:style {:stop-color "#864bcb"
-                :stop-opacity "1"}
-        :offset "0"
-        :id "stop83426"}]
-      [:stop
        {:style {:stop-color "#5b6cdb"
                 :stop-opacity "1"}
         :offset "0"
-        :id "stop83424"}]]
+        :id "stop83424"}]
+      [:stop
+       {:style {:stop-color "#864bcb"
+                :stop-opacity "1"}
+        :offset "1"
+        :id "stop83426"}]]
      [:linearGradient
       {:href "#linearGradient83282"
        :id "linearGradient83914"
@@ -447,39 +434,29 @@
        :gradientUnits "userSpaceOnUse"
        :gradientTransform "translate(-28.239843,35.838281)"}]]
     [:path
-     {:style {:fill "url(#linearGradient83914)"
+     {:id "path63575"
+      :style {:fill "url(#linearGradient83914)"
               :stroke "#000"
               :stroke-width "0.2"}
-      :d "M 38.516015,0.1 C 17.299425,0.099975 0.099975,17.299426 0.1,38.516015 0.14021,52.650792 7.939263,65.62171 20.404687,72.285547 27.352299,68.095451 38.42437,58.236238 36.150781,38.668359 c 0.03006,-0.324814 -0.190537,-0.193896 -0.417969,-0.216797 0,0 -17.141604,-0.600556 -25.964844,-24.195312 0,0 3.069667,1.539888 4.671876,1.863281 4.731966,0.955108 10.433623,-1.137145 14.480468,0.263672 0,0 2.921463,0.720837 6.824219,5.316406 0,0 0.612641,-7.159933 5.068359,-9.816406 4.455719,-2.6564734 8.863694,-1.47406 12.1875,-8.484375 0,0 9.627799,15.374042 -8.927734,33.582031 -0.105395,-0.03178 10.295363,20.207571 -4.990234,39.910156 20.979109,-0.309313 37.829519,-17.39362 37.849619,-38.375 C 76.932071,17.299423 59.732607,0.099972 38.516015,0.1 Z"}]]]
-  #_
-  [:div
-   "Mode:"
-   (map (fn [{:keys [id checked?]}]
-          ^{:key id}
-          [:<>
-           [:input {:checked checked?
-                    :onChange #(>evt [::select-mode id])
-                    :type "radio"
-                    :id id
-                    :name "mode"
-                    :value id}]
-           [:label {:for id} id]])
-        (<sub [::modes]))])
+      :d "M 38.516015,0.1 C 17.299425,0.099975 0.099975,17.299426 0.1,38.516015 0.14021,52.650792 7.939263,65.62171 20.404687,72.285547 27.352299,68.095451 38.42437,58.236238 36.150781,38.668359 c 0.03006,-0.324814 -0.190537,-0.193896 -0.417969,-0.216797 0,0 -17.141604,-0.600556 -25.964844,-24.195312 0,0 3.069667,1.539888 4.671876,1.863281 4.731966,0.955108 10.433623,-1.137145 14.480468,0.263672 0,0 2.921463,0.720837 6.824219,5.316406 0,0 0.612641,-7.159933 5.068359,-9.816406 4.455719,-2.6564734 8.863694,-1.47406 12.1875,-8.484375 0,0 9.627799,15.374042 -8.927734,33.582031 -0.105395,-0.03178 10.295363,20.207571 -4.990234,39.910156 20.979109,-0.309313 37.829519,-17.39362 37.849619,-38.375 C 76.932071,17.299423 59.732607,0.099972 38.516015,0.1 Z"}]]
+   [:div#extra-space
+    {:style {:width (str "calc(800px - "(<sub [::left-panel-size])")")
+             :height "5px"}}]])
 
 (defn code-comp []
   [:div
    {:style {:overflow "auto"
             :padding "7px 0"}}
    (case (<sub [::selected-mode])
-     "Cardume" [cardume]
-     "Cardume Text" [cardume-text-area]
-     "Mermaid Text" [:pre
-                     {:style {:margin code-margin
-                              :padding code-padding
-                              :font-family code-font-family
-                              :font-size code-font-size
-                              :user-select "text"}}
-                     (<sub [::mermaid-text])])])
+     "cardume" [cardume]
+     "text"    [cardume-text-area]
+     "mermaid" [:pre
+                {:style {:margin code-margin
+                         :padding code-padding
+                         :font-family code-font-family
+                         :font-size code-font-size
+                         :user-select "text"}}
+                (<sub [::mermaid-text])])])
 
 (defn diagram-comp []
   (let [mermaid-text (<sub [::mermaid-text])
@@ -634,10 +611,7 @@
                  :left-panel-size "65vw"}
         :cardume {:selected-lines {}
                   :editing-line nil}
-        :mode {:selected "Cardume"
-               :items [{:id "Cardume"}
-                       {:id "Cardume Text"}
-                       {:id "Mermaid Text"}]}}})
+        :mode {:selected "cardume"}}})
 
 (defn initialize-mermaid []
   (.initialize mermaid
