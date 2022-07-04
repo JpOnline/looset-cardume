@@ -56,6 +56,19 @@
   :<- [::selected-mode]
   selected-mode-style)
 
+(defn arrow-icon [{{transform :transform} :style}]
+  [:svg
+   {:width "2.8404655mm"
+    :height "3.2798767mm"
+    :viewBox "0 0 2.8404655 3.2798767"
+    :style {:transform transform
+            :margin "0 4px 0 0"}}
+   [:g {:transform "translate(-58.753942,-132.43234)"}
+    [:path
+     {:d "m 270.81166,157.53724 0,-1.63995 0,-1.63994 1.42023,0.81997 1.42024,0.81997 -1.42024,0.81997 z"
+      :style {:fill "#545454"}
+      :transform "translate(-212.05772,-21.825018)"}]]])
+
 (defn process-cardume [data-lines]
   (first
     (reduce
@@ -68,8 +81,11 @@
                                   end-folding? folding-stack
                                   :else (conj folding-stack stack-item))
               [arrow-position toggle-event] (if (= "closed" extracted-fold-status)
-                                              ["> " "open"]
-                                              ["v " "closed"])
+                                              [[arrow-icon]
+                                               "open"]
+                                              [[arrow-icon
+                                                {:style {:transform "rotate(90deg)"}}]
+                                               "closed"])
               show-fold-head? (and folding-head? (not= fold-status "closed"))
               text (cond
                      (= "closed" fold-status) ""
@@ -603,7 +619,7 @@
                   :editing-line nil}
         :mode {:selected "cardume"}
         :diagram {:zoom 1
-                  :zooming? true}}})
+                  :zooming? false}}})
 
 (defn initialize-mermaid []
   (.initialize mermaid
