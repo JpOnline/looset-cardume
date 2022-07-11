@@ -169,6 +169,15 @@
     (map str/trim)
     (str/join "\n")))
 
+(re-frame/reg-fx
+  :set-url-state
+  (fn [cardume-text]
+    (let [loc js/window.location]
+      (js/window.history.replaceState
+        nil nil
+        (str loc.origin loc.pathname"?diagram="
+             (js/encodeURIComponent cardume-text))))))
+
 (defn set-cardume-text
   [app-state [_event v]]
   (try (.parse mermaid (trim-lines (mermaid-text v)))
@@ -180,7 +189,13 @@
          (-> app-state
            (assoc-in [:domain :cardume-text] v)
            (assoc-in [:ui :validation :valid-diagram?] false)))))
-(re-frame/reg-event-db ::set-cardume-text set-cardume-text)
+
+(defn set-cardume-text*
+  [{app-state :db} [event v]]
+  (let [new-app-state (set-cardume-text app-state [event v])]
+    {:db new-app-state
+     :set-url-state (get-in new-app-state [:ui :validation :valid-cardume-text])}))
+(re-frame/reg-event-fx ::set-cardume-text set-cardume-text*)
 
 (defn select-mode
   [app-state [_event v]]
@@ -627,7 +642,9 @@
 
 (re-frame/reg-event-db ::set-app-state
   (fn [_ [event application-state]]
-    (set-cardume-text application-state [event (get-in application-state [:domain :cardume-text])])))
+    (if-let [diagram (.get (js/URLSearchParams. js/window.location.search) "diagram")]
+      (set-cardume-text application-state [event diagram])
+      (set-cardume-text application-state [event (get-in application-state [:domain :cardume-text])]))))
 
 (defn init-state []
   (re-frame/dispatch-sync [::set-app-state initial-state]))
