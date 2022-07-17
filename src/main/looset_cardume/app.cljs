@@ -643,7 +643,7 @@
     ds))
 
 (def initial-state
-  {:domain {:cardume-text "sequenceDiagram\nparticipant A as Aliased A\nA->>B: a\n% open-fold A->>B: bc\nB->>A: b\nA-->>B: c\n% end-fold\nB->>B: d\nB-->A: e\nB->>A: f\nA->>A: g\nA->>B: h"}
+  {:domain {:cardume-text "sequenceDiagram\nA->>B: a\n% closed-fold A->>B: bc\nB->>A: b\nA-->>B: c\n% end-fold\nB->>B: d\n% closed-fold B->>A: efg\nB-->A: e\nB->>A: f\nA->>A: g\n% end-fold\n% closed-fold note over A,B: hijk\nB-->A: h\nB->>A: i\nA->>A: j\nB-->A: k\n% end-fold\nB->>A: l\nA->>A: m\nB-->A: n\nB->>A: o\nA->>A: p\nA->>B: q"}
    :ui {:panels {:resizing-panels false
                  :left-panel-size "65vw"}
         :cardume {:selected-lines {}
