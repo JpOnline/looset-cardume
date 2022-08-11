@@ -169,14 +169,37 @@
     (map str/trim)
     (str/join "\n")))
 
+(defn gzip [cs-mode b-array]
+  (let [cs (-> "gzip" cs-mode.)
+        writer (-> cs .-writable .getWriter)]
+    (-> writer (.write b-array))
+    (-> writer .close)
+    (.arrayBuffer (js/Response. (-> cs .-readable)))))
+
+(defn gzip-compress [string]
+  (as-> string $
+    (.encode (js/TextEncoder.) $)
+    (gzip js/CompressionStream $)
+    (.then $ #(->> (js/Uint8Array. %)
+                (map char)
+                (apply str)))))
+
+(defn gzip-decompress [compressed-string]
+  (as-> compressed-string $
+    (map #(.charCodeAt % 0) $)
+    (js/Uint8Array. $)
+    (gzip js/DecompressionStream $)
+    (.then $ #(.decode (js/TextDecoder.) %))))
+
 (re-frame/reg-fx
   :set-url-state
   (fn [cardume-text]
-    (let [loc js/window.location]
-      (js/window.history.replaceState
-        nil nil
-        (str loc.origin loc.pathname"?diagram="
-             (js/encodeURIComponent cardume-text))))))
+    (.then (gzip-compress cardume-text)
+           #(let [loc js/window.location]
+              (js/window.history.replaceState
+                nil nil
+                (str loc.origin loc.pathname"?dgrm="
+                     (js/encodeURIComponent (js/btoa %))))))))
 
 (defn set-cardume-text
   [app-state [_event v]]
@@ -657,13 +680,18 @@
     #js {:theme "default"}))
 
 (re-frame/reg-event-db ::set-app-state
-  (fn [_ [event application-state]]
-    (if-let [diagram (.get (js/URLSearchParams. js/window.location.search) "diagram")]
-      (set-cardume-text application-state [event diagram])
-      (set-cardume-text application-state [event (get-in application-state [:domain :cardume-text])]))))
+  (fn [_ [_ application-state]]
+    application-state))
 
 (defn init-state []
-  (re-frame/dispatch-sync [::set-app-state initial-state]))
+  (let [compressed-diagram (.get (js/URLSearchParams. js/window.location.search) "dgrm")
+        diagram (.get (js/URLSearchParams. js/window.location.search) "diagram")]
+    (cond
+      compressed-diagram (.then (gzip-decompress (js/atob compressed-diagram))
+                                #(do (re-frame/dispatch-sync [::set-app-state (set-cardume-text initial-state [::init %])])
+                                     (.contentLoaded mermaid)))
+      diagram (re-frame/dispatch-sync [::set-app-state (set-cardume-text initial-state [::init diagram])])
+      :else (re-frame/dispatch-sync [::set-app-state initial-state]))))
 
 (defn ^:dev/after-load mount-app-element []
   (when ^boolean js/goog.DEBUG ;; Code removed in production
