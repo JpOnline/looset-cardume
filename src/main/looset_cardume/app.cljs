@@ -226,12 +226,14 @@
 (re-frame/reg-event-db ::select-mode select-mode)
 
 (defn toggle-cardume
-  [app-state [event line-number new-state]]
+  [{app-state :db} [event line-number new-state]]
   (let [state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (update lines (js/parseInt line-number) str/replace #"open|closed" new-state)]
-    (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
-(re-frame/reg-event-db ::toggle-cardume toggle-cardume)
+        updated-lines (update lines (js/parseInt line-number) str/replace #"open|closed" new-state)
+        new-app-state (set-cardume-text app-state [event (str/join "\n" updated-lines)])]
+    {:db new-app-state
+     :set-url-state (get-in new-app-state [:ui :validation :valid-cardume-text])}))
+(re-frame/reg-event-fx ::toggle-cardume toggle-cardume)
 
 (defn remove-folds-without-header
   [data-lines]
@@ -251,19 +253,21 @@
       [[] nil] data-lines)))
 
 (defn finish-line-edition
-  [app-state [event]]
+  [{app-state :db} [event]]
   (let [state-cardume-text (cardume-text app-state)
         new-cardume-text (->> (str/split state-cardume-text #"\n")
                            (map #(into {:original-text %}))
                            (process-cardume)
                            (remove-folds-without-header)
                            (map :original-text)
-                           (str/join "\n"))]
+                           (str/join "\n"))
+        new-app-state (-> app-state
+                        (set-cardume-text [event new-cardume-text])
+                        (assoc-in [:ui :cardume :editing-line] nil))]
     (.clearSelection ^js/dragselect @drag-select)
-    (-> app-state
-      (set-cardume-text [event new-cardume-text])
-      (assoc-in [:ui :cardume :editing-line] nil))))
-(re-frame/reg-event-db ::finish-line-edition finish-line-edition)
+    {:db new-app-state
+     :set-url-state (get-in new-app-state [:ui :validation :valid-cardume-text])}))
+(re-frame/reg-event-fx ::finish-line-edition finish-line-edition)
 
 (defn insert-at [coll idx el]
   (let [[before after] (split-at (js/parseInt idx) coll)]
@@ -314,13 +318,15 @@
 (re-frame/reg-event-fx ::lines-select-mouse-up lines-select-mouse-up)
 
 (defn set-cardume-line-text
-  [app-state [event line-num original-text new-text]]
+  [{app-state :db} [event line-num original-text new-text]]
   (let [[_ folding-header] (re-find #"(.*\w+-fold )" original-text)
         state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (assoc lines (js/parseInt line-num) (str folding-header new-text))]
-    (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
-(re-frame/reg-event-db ::set-cardume-line-text set-cardume-line-text)
+        updated-lines (assoc lines (js/parseInt line-num) (str folding-header new-text))
+        new-app-state (set-cardume-text app-state [event (str/join "\n" updated-lines)])]
+    {:db new-app-state
+     :set-url-state (get-in new-app-state [:ui :validation :valid-cardume-text])}))
+(re-frame/reg-event-fx ::set-cardume-line-text set-cardume-line-text)
 
 (defn set-editing-line
   [{app-state :db} [_event line-num]]
@@ -329,12 +335,14 @@
 (re-frame/reg-event-fx ::set-editing-line set-editing-line)
 
 (defn toggle-all
-  [app-state [event new-state]]
+  [{app-state :db} [event new-state]]
   (let [state-cardume-text (cardume-text app-state)
         lines (str/split state-cardume-text #"\n")
-        updated-lines (map #(str/replace % #"open|closed" new-state) lines)]
-    (set-cardume-text app-state [event (str/join "\n" updated-lines)])))
-(re-frame/reg-event-db ::toggle-all toggle-all)
+        updated-lines (map #(str/replace % #"open|closed" new-state) lines)
+        new-app-state (set-cardume-text app-state [event (str/join "\n" updated-lines)])]
+    {:db new-app-state
+     :set-url-state (get-in new-app-state [:ui :validation :valid-cardume-text])}))
+(re-frame/reg-event-fx ::toggle-all toggle-all)
 
 (defn mouse-moved
   [app-state [_event x y]]
