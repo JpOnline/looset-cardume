@@ -695,13 +695,14 @@
 
 (defn init-state []
   (let [compressed-diagram (.get (js/URLSearchParams. js/window.location.search) "dgrm")
-        diagram (.get (js/URLSearchParams. js/window.location.search) "diagram")]
+        diagram (.get (js/URLSearchParams. js/window.location.search) "diagram")
+        default-diagram (get-in initial-state [:domain :cardume-text])]
     (cond
       compressed-diagram (.then (gzip-decompress (js/atob compressed-diagram))
                                 #(do (re-frame/dispatch-sync [::set-app-state (set-cardume-text initial-state [::init %])])
                                      (.contentLoaded mermaid)))
       diagram (re-frame/dispatch-sync [::set-app-state (set-cardume-text initial-state [::init diagram])])
-      :else (re-frame/dispatch-sync [::set-app-state initial-state]))))
+      :else   (re-frame/dispatch-sync [::set-app-state (set-cardume-text initial-state [::init default-diagram])]))))
 
 (defn ^:dev/after-load mount-app-element []
   (when ^boolean js/goog.DEBUG ;; Code removed in production
