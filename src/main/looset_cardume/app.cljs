@@ -445,7 +445,9 @@
                   {:onKeyPress #(when (= (.-key %) "Enter") (>evt [::finish-line-edition]))
                    :onBlur #(>evt [::finish-line-edition])
                    :style {:font-family code-font-family
-                           :font-size code-font-size}
+                           :font-size code-font-size
+                           :width (str "calc(99vw - "(<sub [::left-panel-size])")")
+                           :min-width "20vw"}
                    :value text
                    :onChange #(>evt [::set-cardume-line-text idx original-text (-> % .-target .-value)])}]
                  [cardume-line-pre-el idx line-data]))))]))
